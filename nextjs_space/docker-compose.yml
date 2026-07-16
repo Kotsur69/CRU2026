@@ -1,0 +1,19 @@
+# Lokalny Postgres na dev (metadane CRU2026).
+# Uruchom:  docker compose up -d
+# Zatrzymaj: docker compose down   (dane zostają w wolumenie cru_pgdata)
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cru2026-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cru
+      POSTGRES_PASSWORD: cru
+      POSTGRES_DB: cru2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - cru_pgdata:/var/lib/postgresql/data
+
+volumes:
+  cru_pgdata:

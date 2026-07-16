@@ -1,0 +1,255 @@
+// CRU2026 — model danych (metadane). Odwzorowanie legacy wg historia_wersji/audyt_legacy_strony.md.
+// ZASADA: baza trzyma WYŁĄCZNIE metadane. Pliki żyją poza bazą (StorageAdapter).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// UŻYTKOWNICY I ROLE (natywny login — bez SSO)
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  login        String   @unique
+  email        String?  @unique
+  fullName     String
+  passwordHash String
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  ownedContracts   Contract[] @relation("ContractOwners")
+  createdContracts Contract[] @relation("ContractCreatedBy")
+  updatedContracts Contract[] @relation("ContractModifiedBy")
+  ownedProjects    Project[]  @relation("ProjectOwners")
+
+  @@index([roleId])
+}
+
+model Role {
+  id    String @id @default(cuid())
+  code  String @unique // np. admin, editor, viewer
+  name  String
+  users User[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// SŁOWNIKI (w legacy edytowalne tabele; tu modele słownikowe)
+// ─────────────────────────────────────────────────────────────────────────
+
+model DocumentType {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model ContractStatus {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String // Obowiązująca / Zakończona
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model ProjectStatus {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  name      String // cykl FAU: w toku / wysłane do podpisu / obieg FAU / zakończony ...
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  projects  Project[]
+}
+
+model Businessline {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String // SSC / Dystrybucja
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model Company {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String // AMC / AMDP / AMDSP / HK POM / SSC / ST
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model Location {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String // ~34 miasta
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model Domain {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String // Rodzaj umowy (~31 wartości)
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model ContractNature {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  name      String // Bezkosztowa / Kosztowa / Przychodowa
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+model Currency {
+  id        String     @id @default(cuid())
+  code      String     @unique // PLN / EUR / USD ...
+  name      String
+  sortOrder Int        @default(0)
+  active    Boolean    @default(true)
+  contracts Contract[]
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// KONTRAHENCI
+// ─────────────────────────────────────────────────────────────────────────
+
+model Contractor {
+  id        String     @id @default(cuid())
+  name      String
+  nip       String?
+  contracts Contract[] @relation("ContractContractors")
+
+  @@index([name])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// UMOWA — 34 pola wg /contract/preview/{id}
+// ─────────────────────────────────────────────────────────────────────────
+
+model Contract {
+  id                String   @id @default(cuid())
+
+  // Identyfikacja
+  identifier        String   @unique // np. AMDSP/DYS/2026/0006
+  contractNumber    String? // Numer umowy
+  contractReference String? // z formularza wyszukiwania
+
+  // Klasyfikacja (FK słownikowe)
+  documentTypeId    String?
+  documentType      DocumentType?   @relation(fields: [documentTypeId], references: [id])
+  statusId          String?
+  status            ContractStatus? @relation(fields: [statusId], references: [id])
+  businesslineId    String?
+  businessline      Businessline?   @relation(fields: [businesslineId], references: [id])
+  companyId         String?
+  company           Company?        @relation(fields: [companyId], references: [id])
+  locationId        String?
+  location          Location?       @relation(fields: [locationId], references: [id])
+  domainId          String? // Rodzaj umowy
+  domain            Domain?         @relation(fields: [domainId], references: [id])
+  natureId          String? // Charakter umowy
+  nature            ContractNature? @relation(fields: [natureId], references: [id])
+  currencyId        String?
+  currency          Currency?       @relation(fields: [currencyId], references: [id])
+
+  // Treść / warunki
+  subject           String? // Przedmiot umowy
+  dateStart         DateTime? // Data zawarcia
+  dateEnd           DateTime? // Data zakończenia
+  noticePeriod      String? // Okres wypowiedzenia
+  amount            Decimal?  @db.Decimal(18, 2) // Wynagrodzenie
+  otherAmountDesc   String? // Inne określenie wynagrodzenia
+  paymentTerm       String? // Termin płatności
+  deliveryForm      String? // Forma doręczenia
+  exportImport      String? // Eksport/Import
+
+  // Flagi (checkboxy legacy)
+  weksel            Boolean  @default(false)
+  companyConnected  Boolean  @default(false) // Podmiot powiązane
+  formularz         Boolean  @default(false)
+  obsc              Boolean  @default(false)
+
+  remarks           String? // Uwagi
+
+  // Relacje
+  ownerIds          User[]        @relation("ContractOwners") // Właściciel umowy (multiple)
+  contractors       Contractor[]  @relation("ContractContractors")
+  projectId         String?
+  project           Project?      @relation(fields: [projectId], references: [id])
+  attachments       Attachment[]
+
+  // Aneksy (self-relation: aneks -> umowa nadrzędna)
+  parentId          String?
+  parent            Contract?  @relation("ContractAnnexes", fields: [parentId], references: [id])
+  annexes           Contract[] @relation("ContractAnnexes")
+
+  // Audyt
+  createdAt         DateTime  @default(now()) // Data rejestracji
+  createdById       String? // Zarejestrowano przez
+  createdBy         User?     @relation("ContractCreatedBy", fields: [createdById], references: [id])
+  modifiedAt        DateTime  @updatedAt // Data modyfikacji
+  modifiedById      String? // Modyfikowano przez
+  modifiedBy        User?     @relation("ContractModifiedBy", fields: [modifiedById], references: [id])
+
+  @@index([statusId])
+  @@index([companyId])
+  @@index([documentTypeId])
+  @@index([dateEnd])
+  @@index([parentId])
+  @@index([projectId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PROJEKT (szkielet — workflow FAU)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Project {
+  id          String         @id @default(cuid())
+  identifier  String         @unique
+  subject     String?
+  statusId    String?
+  status      ProjectStatus? @relation(fields: [statusId], references: [id])
+  owners      User[]         @relation("ProjectOwners")
+  lastNote    String? // Ostatnia notatka
+  reviewer    String? // Opiniujący
+  sentToSign  DateTime? // Wysłane do podpisu
+  contracts   Contract[]
+  createdAt   DateTime       @default(now())
+  modifiedAt  DateTime       @updatedAt
+
+  @@index([statusId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ZAŁĄCZNIK — referencja przez StorageAdapter (NIE ścieżka fizyczna w bazie)
+// ─────────────────────────────────────────────────────────────────────────
+
+model Attachment {
+  id         String   @id @default(cuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  filename   String
+  storageKey String // klucz w StorageAdapter (opaque)
+  mimeType   String?
+  sizeBytes  Int?
+  isFinal    Boolean  @default(false) // "wersja ostateczna"
+  addedAt    DateTime @default(now())
+
+  @@index([contractId])
+}
