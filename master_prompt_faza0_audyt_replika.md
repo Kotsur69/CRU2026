@@ -1,3 +1,6 @@
+> # ⛔ NIEAKTUALNE (od 2026-07-17) — NIE UŻYWAĆ
+> Ten master-prompt dotyczy **porzuconej** strategii: greenfield rewrite + replika 1:1 legacy w Next.js + własny Postgres/Abacus + Entra ID SSO. Po pivocie 2026-07-17 kierunek to **strangler / Database-as-API**: legacy zostaje nietknięte, dokładamy tylko moduł Adobe Sign (React SPA + Node/Express na legacy MySQL). Aktualny plan: `plan.md`. Kontekst pivotu: `status_projektu.md` (baner na górze + log 2026-07-17). Dokument zostawiony jako zapis historyczny.
+
 # Master Prompt - Faza 0: Audyt i replika legacy strony CRU2026
 
 Ten dokument to gotowy do wklejenia prompt dla agenta (Claude Code / innego coding-agenta), który ma wykonać Fazę 0 z `plan.md`: audyt istniejącej wewnętrznej strony CRU2026 i zbudowanie 1:1 replikowanego szkieletu w nowym stacku, zanim ruszy budowa pełnego rejestru.

@@ -1,27 +1,51 @@
-# CRU2026 — skrypt startowy (dev)
+﻿# CRU2026 — skrypt startowy (dev)
 # Uruchom z folderu nextjs_space:  .\start.ps1
 # Flagi:
 #   -Fresh   wymuś ponowny seed bazy
 #   -NoDev   przygotuj wszystko, ale nie odpalaj serwera dev
+# Baza: przenośny PostgreSQL (pgportable) — NIE Docker.
 # Aplikacja startuje na http://localhost:3100  (3000 zajęte przez inną apkę)
 
 param(
     [switch]$Fresh,
-    [switch]$NoDev
+    [switch]$NoDev,
+    # Ścieżki przenośnego Postgresa — nadpisz, jeśli masz je gdzie indziej.
+    [string]$PgBin  = "C:\Users\mmazur\pgportable\pgsql\bin",
+    [string]$PgData = "C:\Users\mmazur\pgdata"
 )
 
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$Port = 3100
+$Port    = 3100
+$DbName  = "cru2026"
+$DbUser  = "cru"
+$DbPass  = "cru"
 
 function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
-# 1. Konfiguracja (.env)
+# yarn nie jest na PATH na tej maszynie — fallback na `corepack yarn`.
+$script:UseCorepack = -not (Get-Command yarn -ErrorAction SilentlyContinue)
+function Invoke-Yarn {
+    param([Parameter(ValueFromRemainingArguments = $true)]$YarnArgs)
+    if ($script:UseCorepack) { corepack yarn @YarnArgs } else { yarn @YarnArgs }
+}
+
+# 1. Konfiguracja (.env) — wstrzykuje świeży NEXTAUTH_SECRET
 Step "Konfiguracja (.env)"
 if (-not (Test-Path ".env")) {
-    Copy-Item ".env.example" ".env"
-    Write-Host "Utworzono .env z .env.example — sprawdź NEXTAUTH_SECRET/DATABASE_URL." -ForegroundColor Yellow
+    $bytes = New-Object 'System.Byte[]' 32
+    ([System.Security.Cryptography.RNGCryptoServiceProvider]::new()).GetBytes($bytes)
+    $secret = [Convert]::ToBase64String($bytes)
+
+    $content = Get-Content ".env.example" -Raw
+    if ($content -match 'NEXTAUTH_SECRET=') {
+        $content = $content -replace 'NEXTAUTH_SECRET=.*', ('NEXTAUTH_SECRET="{0}"' -f $secret)
+    } else {
+        $content += "`nNEXTAUTH_SECRET=`"$secret`"`n"
+    }
+    Set-Content -Path ".env" -Value $content -Encoding UTF8
+    Write-Host "Utworzono .env z .env.example (+ wygenerowany NEXTAUTH_SECRET)." -ForegroundColor Yellow
 } else {
     Write-Host ".env już istnieje — pomijam."
 }
@@ -29,36 +53,73 @@ if (-not (Test-Path ".env")) {
 # 2. Zależności
 Step "Zależności (yarn install)"
 if (-not (Test-Path "node_modules")) {
-    yarn install
+    Invoke-Yarn install
 } else {
     Write-Host "node_modules istnieje — pomijam. (wymuś: rm -r node_modules)"
 }
 
-# 3. Baza — lokalny Postgres w Dockerze
-Step "Postgres (docker compose up -d)"
-docker compose up -d
+# 3. Baza — przenośny PostgreSQL (pgportable)
+Step "PostgreSQL (pgportable)"
+$psql      = Join-Path $PgBin "psql.exe"
+$pgIsReady = Join-Path $PgBin "pg_isready.exe"
+$pgCtl     = Join-Path $PgBin "pg_ctl.exe"
 
-Write-Host "Czekam na gotowość Postgresa..." -NoNewline
-$ready = $false
-foreach ($i in 1..30) {
-    try {
-        docker compose exec -T db pg_isready -U cru -d cru2026 *> $null
-        if ($?) { $ready = $true; break }
-    } catch {}
-    Start-Sleep -Seconds 1
-    Write-Host "." -NoNewline
+foreach ($exe in @($psql, $pgIsReady, $pgCtl)) {
+    if (-not (Test-Path $exe)) {
+        throw "Nie znaleziono $exe — podaj poprawny -PgBin (folder z psql.exe/pg_ctl.exe)."
+    }
 }
-if ($ready) { Write-Host " OK" -ForegroundColor Green }
-else { Write-Host " (timeout — kontynuuję, może i tak wstanie)" -ForegroundColor Yellow }
+
+# 3a. Czy nasłuchuje na 5432? Jeśli nie — wystartuj instancję z $PgData.
+& $pgIsReady -h localhost -p 5432 *> $null
+if (-not $?) {
+    Write-Host "Postgres nie odpowiada — startuję z $PgData ..." -ForegroundColor Yellow
+    if (-not (Test-Path $PgData)) {
+        throw "Brak katalogu danych: $PgData. Podaj poprawny -PgData albo zainicjuj bazę (initdb)."
+    }
+    $log = Join-Path $PgData "server.log"
+    & $pgCtl -D "$PgData" -l "$log" start | Out-Null
+
+    Write-Host "Czekam na gotowość Postgresa..." -NoNewline
+    $ready = $false
+    foreach ($i in 1..30) {
+        & $pgIsReady -h localhost -p 5432 *> $null
+        if ($?) { $ready = $true; break }
+        Start-Sleep -Seconds 1
+        Write-Host "." -NoNewline
+    }
+    if ($ready) { Write-Host " OK" -ForegroundColor Green }
+    else { throw "Postgres nie wstał w 30s — sprawdź $log" }
+} else {
+    Write-Host "Postgres działa na localhost:5432 — używam istniejącej instancji."
+}
+
+# 3b. Rola + baza (idempotentnie; łączymy się jako superuser postgres — trust auth)
+$env:PGCLIENTENCODING = "UTF8"
+$roleExists = (& $psql -U postgres -h localhost -p 5432 -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DbUser';" | Select-Object -First 1)
+if ("$roleExists".Trim() -ne '1') {
+    Write-Host "Tworzę rolę '$DbUser'..."
+    & $psql -U postgres -h localhost -p 5432 -c "CREATE ROLE $DbUser LOGIN PASSWORD '$DbPass';" | Out-Null
+} else {
+    Write-Host "Rola '$DbUser' istnieje — pomijam."
+}
+
+$dbExists = (& $psql -U postgres -h localhost -p 5432 -tAc "SELECT 1 FROM pg_database WHERE datname='$DbName';" | Select-Object -First 1)
+if ("$dbExists".Trim() -ne '1') {
+    Write-Host "Tworzę bazę '$DbName' (owner $DbUser)..."
+    & $psql -U postgres -h localhost -p 5432 -c "CREATE DATABASE $DbName OWNER $DbUser;" | Out-Null
+} else {
+    Write-Host "Baza '$DbName' istnieje — pomijam."
+}
 
 # 4. Schemat + dane
 Step "Schemat bazy (prisma db push)"
-yarn db:push
+Invoke-Yarn db:push
 
 $seedMarker = ".seeded"
 if ($Fresh -or -not (Test-Path $seedMarker)) {
     Step "Seed (slowniki z audytu + admin + przyklady)"
-    yarn db:seed
+    Invoke-Yarn db:seed
     New-Item -ItemType File -Path $seedMarker -Force | Out-Null
 } else {
     Write-Host "`nBaza już zaseedowana (.seeded) — pomijam. (wymuś: .\start.ps1 -Fresh)"
@@ -72,4 +133,4 @@ if ($NoDev) {
 }
 
 Step "Start dev  ->  http://localhost:$Port  (login: admin / admin123)"
-yarn dev
+Invoke-Yarn dev

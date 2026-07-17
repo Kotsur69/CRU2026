@@ -1,3 +1,6 @@
+> # ⛔ NIEAKTUALNE (od 2026-07-17) — NIE UŻYWAĆ
+> Ten master-prompt buduje szkielet **porzuconej** repliki (Next.js 14 + Postgres/Prisma + replika 10 modułów legacy). Po pivocie 2026-07-17 NIE robimy repliki ani własnej bazy — legacy zostaje nietknięte, budujemy tylko moduł Adobe Sign (React SPA + Node/Express na legacy MySQL, prod na wewnętrznym serwerze w Katowicach/Docker). Aktualny plan: `plan.md`. Kontekst: `status_projektu.md`. Dokument zostawiony jako zapis historyczny.
+
 # MASTER PROMPT — Faza 0c, krok 1: pierwszy szkielet repliki CRU2026
 
 > **Jak używać:** to jest prompt startowy do budowy pierwszego szkieletu aplikacji CRU2026 (replika legacy w Next.js). Odpalany po `/compact`. Nowa sesja: przeczytaj najpierw dokumenty źródłowe (niżej), potem realizuj zakres tego szkieletu. Mati kieruje budową na bieżąco — **pytaj, gdy coś jest niejasne, zamiast zgadywać.**

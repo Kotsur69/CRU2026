@@ -5,19 +5,24 @@ Wewnętrzny rejestr umów ArcelorMittal (odtworzenie legacy „AMDS CRU"). Next.
 pliki idą przez abstrakcję `StorageAdapter` (docelowo fizyczny serwer Bytom).
 
 ## Wymagania
-- Node 18+ i **yarn**
-- Docker (lokalny Postgres) — albo własny Postgres pod `DATABASE_URL`
+- Node 18+ i **yarn** (na tej maszynie yarn leci przez `corepack yarn` — skrypt ma fallback)
+- **PostgreSQL** — najprościej przenośny (`pgportable`); Docker NIE jest wymagany.
+  Alternatywnie własny Postgres pod `DATABASE_URL`.
 
 ## Uruchomienie (dev)
 
 ### Najszybciej — jeden skrypt (Windows/PowerShell)
 ```powershell
 cd nextjs_space
-.\start.ps1                 # env -> deps -> Postgres -> schemat -> seed -> dev
+.\start.ps1                 # env -> deps -> Postgres(pgportable) -> rola/baza -> schemat -> seed -> dev
 # .\start.ps1 -Fresh        # wymuś ponowny seed bazy
 # .\start.ps1 -NoDev        # przygotuj wszystko, ale nie odpalaj serwera
+# .\start.ps1 -PgBin "..." -PgData "..."   # inne ścieżki przenośnego Postgresa
 ```
-Skrypt jest idempotentny — pomija kroki już wykonane. App wstaje na **http://localhost:3100**.
+Skrypt jest idempotentny — pomija kroki już wykonane. Wykrywa przenośnego Postgresa na
+`localhost:5432` (domyślnie `C:\Users\mmazur\pgportable\pgsql\bin` + dane w
+`C:\Users\mmazur\pgdata`), a jeśli nie działa — startuje go, po czym zakłada rolę `cru`
+i bazę `cru2026` (jeśli ich nie ma). App wstaje na **http://localhost:3100**.
 
 ### Ręcznie (krok po kroku)
 ```bash
@@ -27,8 +32,11 @@ yarn install
 # 2. Konfiguracja
 cp .env.example .env        # w razie potrzeby zmień DATABASE_URL / NEXTAUTH_SECRET
 
-# 3. Baza (lokalny Postgres w Dockerze)
-docker compose up -d
+# 3. Baza — przenośny Postgres (pgportable). Jeśli nie działa, wystartuj go:
+#    & "C:\Users\mmazur\pgportable\pgsql\bin\pg_ctl.exe" -D "C:\Users\mmazur\pgdata" start
+#    a potem rola + baza (jednorazowo, jako superuser postgres — trust auth):
+#    psql -U postgres -c "CREATE ROLE cru LOGIN PASSWORD 'cru';"
+#    psql -U postgres -c "CREATE DATABASE cru2026 OWNER cru;"
 
 # 4. Schemat + dane słownikowe i przykładowe
 yarn db:push                # utwórz tabele wg prisma/schema.prisma

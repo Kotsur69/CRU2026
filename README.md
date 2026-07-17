@@ -31,13 +31,15 @@ NextAuth (natywny login, bez SSO) · Tailwind · abstrakcja `StorageAdapter` na 
 Cała aplikacja żyje w [`nextjs_space/`](nextjs_space/). Najszybciej:
 ```powershell
 cd nextjs_space
-.\start.ps1          # env -> deps -> Postgres(Docker) -> schemat -> seed -> dev
+.\start.ps1          # env -> deps -> Postgres(pgportable) -> rola/baza -> schemat -> seed -> dev
 ```
 Aplikacja: **http://localhost:3100** · login **admin / admin123**.
 Szczegóły i wariant ręczny: [`nextjs_space/README.md`](nextjs_space/README.md).
 
-> Wymaga lokalnego Postgresa (docker-compose w `nextjs_space/`) albo własnego
-> `DATABASE_URL`. Pliki załączników **nigdy** nie trafiają do bazy.
+> Wymaga lokalnego Postgresa — na tej maszynie przenośny **pgportable**
+> (`C:\Users\mmazur\pgportable`, dane w `C:\Users\mmazur\pgdata`); Docker nie jest
+> potrzebny. Skrypt sam wykrywa/startuje bazę i zakłada rolę `cru` + bazę `cru2026`.
+> Alternatywnie własny `DATABASE_URL`. Pliki załączników **nigdy** nie trafiają do bazy.
 
 ## Zakres
 **Jest (Faza 0c):** natywny login, layout (10 modułów), moduł **Umowy**

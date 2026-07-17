@@ -2,25 +2,32 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SearchForm } from "@/features/umowy/search-form";
-import { formatMoney } from "@/lib/format";
+import { ContractsTable, type ContractRow } from "@/components/umowy/contracts-table";
 
 export const dynamic = "force-dynamic";
 
 type SP = Record<string, string | undefined>;
 
 function buildWhere(sp: SP): Prisma.ContractWhereInput {
-  const where: Prisma.ContractWhereInput = {};
-  if (sp.identifier) where.identifier = { contains: sp.identifier, mode: "insensitive" };
-  if (sp.type) where.documentTypeId = sp.type;
-  if (sp.status) where.statusId = sp.status;
-  if (sp.company) where.companyId = sp.company;
-  if (sp.location) where.locationId = sp.location;
-  if (sp.domain) where.domainId = sp.domain;
-  if (sp.nature) where.natureId = sp.nature;
-  if (sp.obsc === "1") where.obsc = true;
-  if (sp.companyConnected === "1") where.companyConnected = true;
-  if (sp.dateEnd) where.dateEnd = { lte: new Date(sp.dateEnd) };
-  return where;
+  const and: Prisma.ContractWhereInput[] = [];
+  if (sp.identifier) and.push({ identifier: { contains: sp.identifier, mode: "insensitive" } });
+  if (sp.contractNumber) {
+    and.push({ contractNumber: { contains: sp.contractNumber, mode: "insensitive" } });
+  }
+  if (sp.type) and.push({ documentTypeId: sp.type });
+  if (sp.status) and.push({ statusId: sp.status });
+  if (sp.company) and.push({ companyId: sp.company });
+  if (sp.location) and.push({ locationId: sp.location });
+  if (sp.domain) and.push({ domainId: sp.domain });
+  if (sp.nature) and.push({ natureId: sp.nature });
+  if (sp.businessline) and.push({ businesslineId: sp.businessline });
+  if (sp.contractor) and.push({ contractors: { some: { id: sp.contractor } } });
+  if (sp.owner) and.push({ ownerIds: { some: { id: sp.owner } } });
+  if (sp.nip) and.push({ contractors: { some: { nip: { contains: sp.nip } } } });
+  if (sp.obsc === "1") and.push({ obsc: true });
+  if (sp.companyConnected === "1") and.push({ companyConnected: true });
+  if (sp.dateEnd) and.push({ dateEnd: { lte: new Date(sp.dateEnd) } });
+  return and.length ? { AND: and } : {};
 }
 
 export default async function UmowyPage({
@@ -40,13 +47,31 @@ export default async function UmowyPage({
       locations: await prisma.location.findMany({ orderBy: { sortOrder: "asc" } }),
       domains: await prisma.domain.findMany({ orderBy: { sortOrder: "asc" } }),
       natures: await prisma.contractNature.findMany({ orderBy: { sortOrder: "asc" } }),
+      businesslines: await prisma.businessline.findMany({ orderBy: { sortOrder: "asc" } }),
+      contractors: await prisma.contractor.findMany({ orderBy: { name: "asc" } }),
+      owners: (
+        await prisma.user.findMany({
+          where: { active: true },
+          orderBy: { fullName: "asc" },
+          select: { id: true, fullName: true },
+        })
+      ).map((u) => ({ id: u.id, name: u.fullName })),
     }))(),
     prisma.contract.count({ where }),
     prisma.contract.findMany({
       where,
       include: {
-        documentType: true, status: true, company: true, location: true,
-        currency: true, businessline: true, contractors: true, ownerIds: true,
+        documentType: true,
+        status: true,
+        company: true,
+        location: true,
+        currency: true,
+        businessline: true,
+        domain: true,
+        nature: true,
+        contractors: true,
+        ownerIds: true,
+        _count: { select: { attachments: true, annexes: true } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
@@ -54,7 +79,38 @@ export default async function UmowyPage({
     }),
   ]);
 
+  const rows: ContractRow[] = contracts.map((c) => ({
+    id: c.id,
+    identifier: c.identifier,
+    documentType: c.documentType?.name ?? null,
+    contractNumber: c.contractNumber,
+    statusName: c.status?.name ?? null,
+    company: c.company?.name ?? null,
+    location: c.location?.name ?? null,
+    companyConnected: c.companyConnected,
+    nature: c.nature?.name ?? null,
+    subject: c.subject,
+    dateStart: c.dateStart ? c.dateStart.toISOString() : null,
+    dateEnd: c.dateEnd ? c.dateEnd.toISOString() : null,
+    noticePeriod: c.noticePeriod,
+    amount: c.amount ? c.amount.toString() : null,
+    currencyCode: c.currency?.code?.toUpperCase() ?? null,
+    obsc: c.obsc,
+    owners: c.ownerIds.map((o) => o.fullName),
+    businessline: c.businessline?.name ?? null,
+    contractors: c.contractors.map((k) => k.name),
+    otherAmountDesc: c.otherAmountDesc,
+    domain: c.domain?.name ?? null,
+    formularz: c.formularz,
+    remarks: c.remarks,
+    hasParent: c.parentId !== null,
+    annexCount: c._count.annexes,
+    attachmentsCount: c._count.attachments,
+  }));
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
   const mkPageHref = (p: number) => {
     const q = new URLSearchParams(searchParams as Record<string, string>);
     q.set("page", String(p));
@@ -63,78 +119,46 @@ export default async function UmowyPage({
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-end justify-between">
         <h1 className="font-heading text-2xl font-semibold">Umowy</h1>
         <span className="text-sm text-muted-foreground">
-          Znaleziono: <strong>{total}</strong>
+          Znaleziono: <strong className="text-foreground">{total}</strong>
         </span>
       </div>
 
       <SearchForm dicts={dicts} />
 
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/60 text-left">
-            <tr>
-              <th className="px-3 py-2 font-medium">Identyfikator</th>
-              <th className="px-3 py-2 font-medium">Typ</th>
-              <th className="px-3 py-2 font-medium">Numer</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Spółka</th>
-              <th className="px-3 py-2 font-medium">Lokalizacja</th>
-              <th className="px-3 py-2 font-medium">Przedmiot</th>
-              <th className="px-3 py-2 text-right font-medium">Wynagrodzenie</th>
-              <th className="px-3 py-2 text-center font-medium">OBSC</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contracts.length === 0 && (
-              <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                  Brak umów spełniających kryteria.
-                </td>
-              </tr>
-            )}
-            {contracts.map((c) => (
-              <tr key={c.id} className="border-t hover:bg-muted/40">
-                <td className="px-3 py-2">
-                  <Link href={`/umowy/${c.id}`} className="font-medium text-primary hover:underline">
-                    {c.identifier}
-                  </Link>
-                </td>
-                <td className="px-3 py-2">{c.documentType?.name ?? "—"}</td>
-                <td className="px-3 py-2">{c.contractNumber ?? "—"}</td>
-                <td className="px-3 py-2">{c.status?.name ?? "—"}</td>
-                <td className="px-3 py-2">{c.company?.name ?? "—"}</td>
-                <td className="px-3 py-2">{c.location?.name ?? "—"}</td>
-                <td className="max-w-xs truncate px-3 py-2">{c.subject ?? "—"}</td>
-                <td className="px-3 py-2 text-right">
-                  {formatMoney(c.amount?.toString(), c.currency?.code?.toUpperCase())}
-                </td>
-                <td className="px-3 py-2 text-center">{c.obsc ? "✓" : ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <ContractsTable contracts={rows} />
 
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-          {page > 1 && (
-            <Link href={mkPageHref(page - 1)} className="rounded border px-3 py-1 hover:bg-muted">
-              ← Poprzednia
-            </Link>
+      <div className="mt-4 flex items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>
+          {total > 0 ? (
+            <>
+              Pokazano <strong className="text-foreground">{from}–{to}</strong> z{" "}
+              <strong className="text-foreground">{total}</strong>
+            </>
+          ) : (
+            "Brak wyników"
           )}
-          <span className="px-2 text-muted-foreground">
-            Strona {page} z {totalPages}
-          </span>
-          {page < totalPages && (
-            <Link href={mkPageHref(page + 1)} className="rounded border px-3 py-1 hover:bg-muted">
-              Następna →
-            </Link>
-          )}
-        </div>
-      )}
+        </span>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            {page > 1 && (
+              <Link href={mkPageHref(page - 1)} className="rounded-md border px-3 py-1 transition hover:bg-muted">
+                ← Poprzednia
+              </Link>
+            )}
+            <span className="px-1">
+              Strona {page} z {totalPages}
+            </span>
+            {page < totalPages && (
+              <Link href={mkPageHref(page + 1)} className="rounded-md border px-3 py-1 transition hover:bg-muted">
+                Następna →
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

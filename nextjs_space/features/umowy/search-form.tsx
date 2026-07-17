@@ -14,6 +14,9 @@ interface Dicts {
   locations: Dict[];
   domains: Dict[];
   natures: Dict[];
+  businesslines: Dict[];
+  contractors: Dict[];
+  owners: Dict[];
 }
 
 const PAGE_SIZES = [10, 15, 25, 50, 100, 250, 500];
@@ -34,6 +37,22 @@ function Select({
           <option key={o.id} value={o.id}>{o.name}</option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function TextField({
+  name, label, defaultValue, type = "text",
+}: { name: string; label: string; defaultValue: string; type?: string }) {
+  return (
+    <label className="flex flex-col gap-1 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <input
+        type={type}
+        name={name}
+        defaultValue={defaultValue}
+        className="rounded-md border border-input px-2 py-1.5 text-sm"
+      />
     </label>
   );
 }
@@ -73,30 +92,22 @@ export function SearchForm({ dicts }: { dicts: Dicts }) {
 
       {open && (
         <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Identyfikator</span>
-              <input
-                name="identifier"
-                defaultValue={g("identifier")}
-                className="rounded-md border border-input px-2 py-1.5 text-sm"
-              />
-            </label>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <TextField name="identifier" label="Identyfikator" defaultValue={g("identifier")} />
             <Select name="type" label="Typ dokumentu" options={dicts.documentTypes} defaultValue={g("type")} />
+            <TextField name="contractNumber" label="Numer umowy" defaultValue={g("contractNumber")} />
+            <Select name="businessline" label="Buissnesline" options={dicts.businesslines} defaultValue={g("businessline")} />
             <Select name="status" label="Status" options={dicts.statuses} defaultValue={g("status")} />
             <Select name="company" label="Spółka" options={dicts.companies} defaultValue={g("company")} />
+
             <Select name="location" label="Lokalizacja" options={dicts.locations} defaultValue={g("location")} />
+            <Select name="contractor" label="Kontrahenci" options={dicts.contractors} defaultValue={g("contractor")} />
+            <Select name="owner" label="Właściciel umowy" options={dicts.owners} defaultValue={g("owner")} />
             <Select name="domain" label="Rodzaj umowy" options={dicts.domains} defaultValue={g("domain")} />
-            <Select name="nature" label="Charakter" options={dicts.natures} defaultValue={g("nature")} />
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">Data zakończenia (do)</span>
-              <input
-                type="date"
-                name="dateEnd"
-                defaultValue={g("dateEnd")}
-                className="rounded-md border border-input px-2 py-1.5 text-sm"
-              />
-            </label>
+            <Select name="nature" label="Charakter umowy" options={dicts.natures} defaultValue={g("nature")} />
+            <TextField name="nip" label="NIP" defaultValue={g("nip")} />
+
+            <TextField name="dateEnd" label="Data zakończenia (do)" type="date" defaultValue={g("dateEnd")} />
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-4">

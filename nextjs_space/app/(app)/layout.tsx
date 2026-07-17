@@ -10,9 +10,9 @@ export default function AppLayout({
   return (
     <div className="flex min-h-screen flex-col">
       <Topbar />
-      <div className="flex flex-1">
+      <div className="flex flex-1 items-start">
         <MainNav />
-        <main className="flex-1 overflow-x-auto p-6">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-auto p-6">{children}</main>
       </div>
     </div>
   );

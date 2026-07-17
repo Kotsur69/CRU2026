@@ -18,6 +18,12 @@ function slug(input: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+function addDays(base: Date, days: number): Date {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
 // ── Wartości słownikowe (dokładnie z audytu) ─────────────────────────────
 const DOCUMENT_TYPES = [
   "Aneks", "Kontrakt", "List intencyjny", "Porozumienie",
@@ -111,54 +117,175 @@ async function seedRolesAndUser() {
   });
 }
 
+// ── Definicje przykładowych umów ─────────────────────────────────────────
+// `endDays` = liczba dni od DZIŚ do daty zakończenia → różnorodna sygnalizacja
+// wygasania (po terminie / ≤30 / ≤90 / dalej). Zakończone są celowo w przeszłości.
+
+interface Sample {
+  seq: string;
+  num: string;
+  subj: string;
+  amount: string | null;
+  otherAmount?: string;
+  type: string;
+  status: string;
+  company: string;
+  loc: string;
+  domain: string;
+  nature: string;
+  currency: string;
+  endDays: number;
+  contractor: number; // indeks w CONTRACTORS
+  obsc?: boolean;
+  connected?: boolean;
+  weksel?: boolean;
+}
+
+const CONTRACTORS = [
+  { id: "seed-contractor-1", name: "Przykładowy Kontrahent Sp. z o.o.", nip: "6340197453" },
+  { id: "seed-contractor-2", name: "StalTrans Logistyka S.A.", nip: "9542738114" },
+  { id: "seed-contractor-3", name: "BiuroMax Sp. j.", nip: "5213099881" },
+  { id: "seed-contractor-4", name: "EnergoSerwis Sp. z o.o.", nip: "6252044170" },
+  { id: "seed-contractor-5", name: "MediaNet Telekom Sp. z o.o.", nip: "7010223344" },
+];
+
+const SAMPLES: Sample[] = [
+  { seq: "0001", num: "U/2026/0001", subj: "Usługi serwisowe hali produkcyjnej", amount: "120000.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Katowice", domain: "Usługi", nature: "Kosztowa", currency: "PLN", endDays: 365, contractor: 0 },
+  { seq: "0002", num: "U/2026/0002", subj: "Dostawa materiałów biurowych", amount: "24500.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Katowice", domain: "Zakupy - nieprodukcyjne", nature: "Kosztowa", currency: "PLN", endDays: 210, contractor: 2 },
+  { seq: "0003", num: "U/2026/0003", subj: "Transport wewnętrzny — logistyka", amount: "89000.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Katowice", domain: "Transport/Spedycja", nature: "Kosztowa", currency: "PLN", endDays: 500, contractor: 1 },
+  { seq: "0004", num: "U/2026/0004", subj: "Utrzymanie ruchu — linia cynkownicza", amount: "46000.00", type: "Kontrakt", status: "Obowiązująca", company: "AMDSP", loc: "Dąbrowa Górnicza I", domain: "Utrzymanie ruchu", nature: "Kosztowa", currency: "PLN", endDays: 160, contractor: 3 },
+  { seq: "0005", num: "U/2026/0005", subj: "Abonament telekomunikacyjny (łącza)", amount: "8900.00", type: "Umowa", status: "Obowiązująca", company: "AMC", loc: "Warszawa", domain: "Media", nature: "Kosztowa", currency: "PLN", endDays: 21, contractor: 4 },
+  { seq: "0006", num: "U/2026/0006", subj: "Umowa ramowa na usługi transportowe", amount: "250000.00", type: "Umowa ramowa", status: "Obowiązująca", company: "AMDP", loc: "Kraków", domain: "Transport/Spedycja", nature: "Kosztowa", currency: "PLN", endDays: 65, contractor: 1 },
+  { seq: "0007", num: "U/2026/0007", subj: "Sprzątanie powierzchni biurowych", amount: "15000.00", type: "Zlecenie", status: "Obowiązująca", company: "SSC", loc: "Gdańsk", domain: "Usługi", nature: "Kosztowa", currency: "PLN", endDays: 400, contractor: 2 },
+  { seq: "0008", num: "U/2025/0102", subj: "Najem magazynu (zakończony)", amount: "72000.00", type: "Umowa", status: "Zakończona", company: "AMDSP", loc: "Wrocław", domain: "Najem/Dzierżawa", nature: "Kosztowa", currency: "PLN", endDays: -120, contractor: 0 },
+  { seq: "0009", num: "U/2026/0009", subj: "Dostęp do internetu — oddział", amount: "3200.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Bytom", domain: "Media", nature: "Kosztowa", currency: "PLN", endDays: 240, connected: true, contractor: 4 },
+  { seq: "0010", num: "U/2025/0210", subj: "Obsługa windykacyjna należności", amount: null, otherAmount: "prowizja 8% od odzyskanych kwot", type: "Umowa", status: "Obowiązująca", company: "ST", loc: "Łódź", domain: "Windykacja", nature: "Przychodowa", currency: "PLN", endDays: -8, contractor: 2 },
+  { seq: "0011", num: "U/2026/0011", subj: "Leasing floty samochodowej", amount: "54000.00", type: "Kontrakt", status: "Obowiązująca", company: "AMC", loc: "Olsztyn", domain: "Leasing", nature: "Kosztowa", currency: "EUR", endDays: 600, weksel: true, contractor: 3 },
+  { seq: "0012", num: "U/2025/0044", subj: "Kampania reklamowa (zakończona)", amount: "12800.00", type: "Umowa", status: "Zakończona", company: "AMDP", loc: "Szczecin", domain: "Reklama", nature: "Kosztowa", currency: "PLN", endDays: -300, contractor: 4 },
+  { seq: "0013", num: "U/2026/0013", subj: "Odbiór i utylizacja odpadów przemysłowych", amount: "98000.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Katowice", domain: "Ochrona środowiska", nature: "Kosztowa", currency: "PLN", endDays: 9, obsc: true, contractor: 3 },
+  { seq: "0014", num: "U/2026/0014", subj: "Ramowa umowa zakupowa (MRO)", amount: "430000.00", type: "Umowa ramowa", status: "Obowiązująca", company: "SSC", loc: "Dąbrowa Górnicza I", domain: "Zakupy - nieprodukcyjne", nature: "Kosztowa", currency: "PLN", endDays: 30, contractor: 2 },
+  { seq: "0015", num: "U/2026/0015", subj: "Umowa o zachowaniu poufności (NDA)", amount: null, otherAmount: "n/d — bezkosztowa", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Częstochowa", domain: "Personalne", nature: "Bezkosztowa", currency: "PLN", endDays: 88, contractor: 0 },
+  { seq: "0016", num: "U/2026/0016", subj: "Wdrożenie i utrzymanie systemu ERP", amount: "210000.00", type: "Umowa", status: "Obowiązująca", company: "AMC", loc: "Warszawa", domain: "Informatyka/Teleinformatyka", nature: "Kosztowa", currency: "PLN", endDays: 730, obsc: true, connected: true, contractor: 4 },
+  { seq: "0017", num: "U/2026/0017", subj: "Porozumienie o współpracy handlowej", amount: null, type: "Porozumienie", status: "Obowiązująca", company: "AMDP", loc: "Gdańsk", domain: "Porozumienie", nature: "Bezkosztowa", currency: "PLN", endDays: 55, contractor: 0 },
+  { seq: "0018", num: "U/2025/0071", subj: "Spedycja krajowa (zakończona)", amount: "61000.00", type: "Umowa", status: "Zakończona", company: "ST", loc: "Kielce", domain: "Transport/Spedycja", nature: "Kosztowa", currency: "PLN", endDays: -60, contractor: 1 },
+  { seq: "0019", num: "U/2026/0019", subj: "Serwis wózków widłowych", amount: "33000.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Katowice", domain: "Umowa serwisowa", nature: "Kosztowa", currency: "PLN", endDays: -40, contractor: 3 },
+  { seq: "0020", num: "U/2026/0020", subj: "Leasing maszyn produkcyjnych", amount: "120000.00", type: "Umowa", status: "Obowiązująca", company: "AMDP", loc: "Kraków", domain: "Leasing", nature: "Kosztowa", currency: "EUR", endDays: 160, weksel: true, contractor: 3 },
+  { seq: "0021", num: "U/2024/0311", subj: "Usługi medialne (zakończone)", amount: "4500.00", type: "Umowa", status: "Zakończona", company: "SSC", loc: "Wrocław", domain: "Media", nature: "Kosztowa", currency: "PLN", endDays: -500, contractor: 4 },
+  { seq: "0022", num: "U/2026/0022", subj: "Zakup materiałów handlowych — stal", amount: "780000.00", type: "Kontrakt", status: "Obowiązująca", company: "AMC", loc: "Bydgoszcz", domain: "Zakupy - materiały handlowych", nature: "Kosztowa", currency: "PLN", endDays: 75, obsc: true, contractor: 2 },
+  { seq: "0023", num: "U/2026/0023", subj: "Konserwacja instalacji technicznych", amount: "27000.00", type: "Umowa", status: "Obowiązująca", company: "AMDSP", loc: "Rzeszów", domain: "Utrzymanie ruchu", nature: "Kosztowa", currency: "PLN", endDays: 300, contractor: 3 },
+];
+
 async function seedSampleContracts() {
-  const [docType, status, company, location, domain, nature, currency, owner] =
+  const [docTypes, statuses, companies, locations, domains, natures, currencies, owner] =
     await Promise.all([
-      prisma.documentType.findFirst({ where: { code: slug("Umowa") } }),
-      prisma.contractStatus.findFirst({ where: { code: slug("Obowiązująca") } }),
-      prisma.company.findFirst({ where: { code: slug("AMDSP") } }),
-      prisma.location.findFirst({ where: { code: slug("Katowice") } }),
-      prisma.domain.findFirst({ where: { code: slug("Usługi") } }),
-      prisma.contractNature.findFirst({ where: { code: slug("Kosztowa") } }),
-      prisma.currency.findFirst({ where: { code: "pln" } }),
+      prisma.documentType.findMany(),
+      prisma.contractStatus.findMany(),
+      prisma.company.findMany(),
+      prisma.location.findMany(),
+      prisma.domain.findMany(),
+      prisma.contractNature.findMany(),
+      prisma.currency.findMany(),
       prisma.user.findFirst({ where: { login: "admin" } }),
     ]);
 
-  const contractor = await prisma.contractor.upsert({
-    where: { id: "seed-contractor-1" },
-    update: {},
-    create: { id: "seed-contractor-1", name: "Przykładowy Kontrahent Sp. z o.o.", nip: "6340197453" },
-  });
+  const pick = <T extends { code: string }>(arr: T[], name: string): T | undefined =>
+    arr.find((x) => x.code === slug(name));
+  const cur = (code: string) => currencies.find((x) => x.code === code.toLowerCase());
 
-  const samples = [
-    { identifier: "AMDSP/DYS/2026/0001", contractNumber: "U/2026/0001", subject: "Usługi serwisowe hali produkcyjnej", amount: "120000.00" },
-    { identifier: "AMDSP/DYS/2026/0002", contractNumber: "U/2026/0002", subject: "Dostawa materiałów biurowych", amount: "24500.00" },
-    { identifier: "AMDSP/DYS/2026/0003", contractNumber: "U/2026/0003", subject: "Transport wewnętrzny — logistyka", amount: "89000.00" },
-  ];
+  const contractors = [];
+  for (const cd of CONTRACTORS) {
+    contractors.push(
+      await prisma.contractor.upsert({ where: { id: cd.id }, update: {}, create: cd }),
+    );
+  }
 
-  for (const s of samples) {
+  const today = new Date();
+
+  for (const s of SAMPLES) {
+    const dateEnd = addDays(today, s.endDays);
+    const dateStart = addDays(dateEnd, -365);
     await prisma.contract.upsert({
-      where: { identifier: s.identifier },
+      where: { identifier: `AMDSP/DYS/2026/${s.seq}` },
       update: {},
       create: {
-        identifier: s.identifier,
-        contractNumber: s.contractNumber,
-        subject: s.subject,
-        amount: s.amount,
-        dateStart: new Date("2026-01-15"),
-        dateEnd: new Date("2027-01-14"),
+        identifier: `AMDSP/DYS/2026/${s.seq}`,
+        contractNumber: s.num,
+        subject: s.subj,
+        amount: s.amount ?? undefined,
+        otherAmountDesc: s.otherAmount,
+        dateStart,
+        dateEnd,
         paymentTerm: "30 dni",
-        documentTypeId: docType?.id,
-        statusId: status?.id,
-        companyId: company?.id,
-        locationId: location?.id,
-        domainId: domain?.id,
-        natureId: nature?.id,
-        currencyId: currency?.id,
-        obsc: false,
-        contractors: { connect: { id: contractor.id } },
+        documentTypeId: pick(docTypes, s.type)?.id,
+        statusId: pick(statuses, s.status)?.id,
+        companyId: pick(companies, s.company)?.id,
+        locationId: pick(locations, s.loc)?.id,
+        domainId: pick(domains, s.domain)?.id,
+        natureId: pick(natures, s.nature)?.id,
+        currencyId: cur(s.currency)?.id,
+        obsc: s.obsc ?? false,
+        companyConnected: s.connected ?? false,
+        weksel: s.weksel ?? false,
+        contractors: { connect: { id: contractors[s.contractor].id } },
         ownerIds: owner ? { connect: { id: owner.id } } : undefined,
         createdById: owner?.id,
+      },
+    });
+  }
+
+  // Aneks do 0006 (relacja self — pokazuje sekcję „Aneksy" po obu stronach).
+  const parent = await prisma.contract.findUnique({
+    where: { identifier: "AMDSP/DYS/2026/0006" },
+  });
+  if (parent) {
+    const dateEnd = addDays(today, 65);
+    await prisma.contract.upsert({
+      where: { identifier: "AMDSP/DYS/2026/0006-A1" },
+      update: {},
+      create: {
+        identifier: "AMDSP/DYS/2026/0006-A1",
+        contractNumber: "A/2026/0006-1",
+        subject: "Aneks nr 1 — aktualizacja stawek transportowych",
+        amount: "30000.00",
+        dateStart: addDays(dateEnd, -300),
+        dateEnd,
+        documentTypeId: pick(docTypes, "Aneks")?.id,
+        statusId: pick(statuses, "Obowiązująca")?.id,
+        companyId: pick(companies, "AMDP")?.id,
+        locationId: pick(locations, "Kraków")?.id,
+        domainId: pick(domains, "Transport/Spedycja")?.id,
+        natureId: pick(natures, "Kosztowa")?.id,
+        currencyId: cur("PLN")?.id,
+        parentId: parent.id,
+        contractors: { connect: { id: contractors[1].id } },
+        ownerIds: owner ? { connect: { id: owner.id } } : undefined,
+        createdById: owner?.id,
+      },
+    });
+
+    // Przykładowe załączniki (StorageAdapter-stub) — zapełniają sekcję „Załączniki".
+    await prisma.attachment.upsert({
+      where: { id: "seed-att-1" },
+      update: {},
+      create: {
+        id: "seed-att-1",
+        contractId: parent.id,
+        filename: "umowa_0006_podpisana.pdf",
+        storageKey: "umowa_0006_podpisana.pdf",
+        mimeType: "application/pdf",
+        isFinal: true,
+      },
+    });
+    await prisma.attachment.upsert({
+      where: { id: "seed-att-2" },
+      update: {},
+      create: {
+        id: "seed-att-2",
+        contractId: parent.id,
+        filename: "zalacznik_1_specyfikacja.pdf",
+        storageKey: "zalacznik_1_specyfikacja.pdf",
+        mimeType: "application/pdf",
+        isFinal: false,
       },
     });
   }

@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LogOut } from "lucide-react";
+import { NAV_ITEMS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 const LOCALES = ["pl", "en"] as const;
@@ -42,27 +44,69 @@ function LangSwitch() {
 
 export function Topbar() {
   const { data: session } = useSession();
+  const pathname = usePathname();
 
   return (
-    <header className="flex h-14 items-center justify-between bg-brand-gradient px-6 text-white shadow">
-      <div className="font-heading text-lg font-semibold tracking-wide">
-        AMDS CRU
+    <header className="bg-brand-gradient text-white shadow">
+      <div className="flex h-14 items-center justify-between px-6">
+        <div className="font-heading text-lg font-semibold tracking-wide">
+          AMDS CRU
+        </div>
+        <div className="flex items-center gap-4">
+          <LangSwitch />
+          {session?.user?.name && (
+            <span className="hidden text-sm text-white/80 sm:inline">
+              {session.user.name}
+            </span>
+          )}
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="flex items-center gap-1.5 rounded bg-white/15 px-3 py-1.5 text-sm transition hover:bg-white/25"
+          >
+            <LogOut className="h-4 w-4" />
+            Wyloguj
+          </button>
+        </div>
       </div>
-      <div className="flex items-center gap-4">
-        <LangSwitch />
-        {session?.user?.name && (
-          <span className="hidden text-sm text-white/80 sm:inline">
-            {session.user.name}
-          </span>
-        )}
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-1.5 rounded bg-white/15 px-3 py-1.5 text-sm transition hover:bg-white/25"
-        >
-          <LogOut className="h-4 w-4" />
-          Wyloguj
-        </button>
-      </div>
+
+      <nav
+        aria-label="Nawigacja główna"
+        className="flex items-center gap-1 overflow-x-auto border-t border-white/15 px-4 py-1.5"
+      >
+        {NAV_ITEMS.map((item) => {
+          const active = pathname.startsWith(item.href);
+          const Icon = item.icon;
+
+          if (!item.ready) {
+            return (
+              <span
+                key={item.href}
+                title={`${item.label} — moduł w budowie`}
+                className="flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-white/40"
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {item.label}
+              </span>
+            );
+          }
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+                active
+                  ? "bg-white/20 font-medium text-white"
+                  : "text-white/75 hover:bg-white/10 hover:text-white",
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
     </header>
   );
 }
