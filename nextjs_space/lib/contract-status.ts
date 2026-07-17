@@ -9,6 +9,17 @@ export function statusTone(name?: string | null): Tone {
   return "info";
 }
 
+/** Ton badge'a dla statusu projektu (workflow FAU — inny cykl niż umowa). */
+export function projectStatusTone(name?: string | null): Tone {
+  if (!name) return "neutral";
+  const n = name.toLowerCase();
+  if (n.includes("anulowan")) return "danger";
+  if (n.includes("zrealizowany brak umowy")) return "warning";
+  if (n.includes("wysłane") || n.includes("obieg")) return "info"; // w tym "zakończono obieg FAU" — jeszcze nie finalny
+  if (n.includes("zakończ")) return "success";
+  return "neutral"; // w toku
+}
+
 const DAY_MS = 86_400_000;
 const SOON_DAYS = 30; // ≤ 30 dni → pilne (czerwony)
 const WATCH_DAYS = 90; // ≤ 90 dni → obserwacja (bursztyn)

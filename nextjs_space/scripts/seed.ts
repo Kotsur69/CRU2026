@@ -291,6 +291,120 @@ async function seedSampleContracts() {
   }
 }
 
+// ── Definicje przykładowych projektów ────────────────────────────────────
+// Projekt w legacy to rekord Umowy w statusie workflow (audyt sekcja 2) — każdy
+// przykład tworzy własną, powiązaną Umowę (`Contract.projectId`) niosącą pola
+// klasyfikacji/finansów, a pola workflow (opiniujący, notatka, data wysłania)
+// żyją na Project. Po jednym przykładzie na każdy z 7 statusów cyklu FAU.
+
+interface ProjectSample {
+  seq: string;
+  identifier: string;
+  status: string;
+  reviewer: string | null;
+  sentToSignDays: number | null; // ujemne = w przeszłości względem dziś
+  lastNote: string;
+  subj: string;
+  amount: string | null;
+  type: string;
+  company: string;
+  loc: string;
+  domain: string;
+  nature: string;
+  currency: string;
+  contractor: number;
+  finalized?: boolean; // true = obieg zakończony → Umowa dostaje status "Obowiązująca"
+}
+
+// Wartości `status` muszą być dokładnymi nazwami z PROJECT_STATUSES powyżej — tylko
+// pierwsza pozycja słownika niesie prefiks „Projekt - ", reszta nie (tak jak w audycie
+// legacy skopiowanym 1:1 do PROJECT_STATUSES).
+const PROJECT_SAMPLES: ProjectSample[] = [
+  { seq: "P01", identifier: "P/2026/0001", status: "Projekt - w toku", reviewer: null, sentToSignDays: null, lastNote: "Czeka na opinię działu prawnego.", subj: "Modernizacja instalacji sprężonego powietrza", amount: "165000.00", type: "Umowa", company: "AMDSP", loc: "Dąbrowa Górnicza I", domain: "Utrzymanie ruchu", nature: "Kosztowa", currency: "PLN", contractor: 3 },
+  { seq: "P02", identifier: "P/2026/0002", status: "Wysłane do podpisu", reviewer: "Kowalski Jan", sentToSignDays: -5, lastNote: "Wysłano do podpisu w wersji ostatecznej.", subj: "Umowa serwisowa systemów IT — helpdesk", amount: "88000.00", type: "Umowa", company: "AMC", loc: "Warszawa", domain: "Informatyka/Teleinformatyka", nature: "Kosztowa", currency: "PLN", contractor: 4 },
+  { seq: "P03", identifier: "P/2026/0003", status: "Rozpoczęto obieg FAU", reviewer: "Nowak Anna", sentToSignDays: -10, lastNote: "Rozpoczęto obieg FAU — oczekiwanie na akceptacje.", subj: "Dostawa i montaż regałów magazynowych", amount: "54000.00", type: "Zlecenie", company: "SSC", loc: "Gdańsk", domain: "Zakupy - nieprodukcyjne", nature: "Kosztowa", currency: "PLN", contractor: 2 },
+  { seq: "P04", identifier: "P/2026/0004", status: "Zakończono obieg FAU", reviewer: "Wiśniewski Piotr", sentToSignDays: -20, lastNote: "Obieg FAU zakończony, oczekiwanie na podpis stron.", subj: "Umowa najmu powierzchni biurowej", amount: "132000.00", type: "Umowa", company: "AMDP", loc: "Kraków", domain: "Najem/Dzierżawa", nature: "Kosztowa", currency: "PLN", contractor: 0 },
+  { seq: "P05", identifier: "P/2026/0005", status: "Zakończony", reviewer: "Kowalski Jan", sentToSignDays: -60, lastNote: "Umowa podpisana i zarejestrowana.", subj: "Umowa ramowa na transport hutniczy", amount: "310000.00", type: "Umowa ramowa", company: "ST", loc: "Łódź", domain: "Transport/Spedycja", nature: "Kosztowa", currency: "PLN", contractor: 1, finalized: true },
+  { seq: "P06", identifier: "P/2026/0006", status: "Zrealizowany brak umowy", reviewer: "Nowak Anna", sentToSignDays: null, lastNote: "Zrezygnowano z zawarcia umowy — kontrahent wycofał ofertę.", subj: "Wdrożenie systemu monitoringu wizyjnego", amount: "76000.00", type: "Umowa", company: "AMDSP", loc: "Katowice", domain: "Inne", nature: "Kosztowa", currency: "PLN", contractor: 3 },
+  { seq: "P07", identifier: "P/2026/0007", status: "Anulowany", reviewer: null, sentToSignDays: null, lastNote: "Projekt anulowany decyzją zamawiającego.", subj: "Kampania promocyjna produktów dystrybucyjnych", amount: "19500.00", type: "Umowa", company: "SSC", loc: "Bydgoszcz", domain: "Reklama", nature: "Kosztowa", currency: "PLN", contractor: 4 },
+];
+
+async function seedSampleProjects() {
+  const [docTypes, contractStatuses, projectStatuses, companies, locations, domains, natures, currencies, owner] =
+    await Promise.all([
+      prisma.documentType.findMany(),
+      prisma.contractStatus.findMany(),
+      prisma.projectStatus.findMany(),
+      prisma.company.findMany(),
+      prisma.location.findMany(),
+      prisma.domain.findMany(),
+      prisma.contractNature.findMany(),
+      prisma.currency.findMany(),
+      prisma.user.findFirst({ where: { login: "admin" } }),
+    ]);
+
+  const pick = <T extends { code: string }>(arr: T[], name: string): T | undefined =>
+    arr.find((x) => x.code === slug(name));
+  const cur = (code: string) => currencies.find((x) => x.code === code.toLowerCase());
+
+  const today = new Date();
+
+  for (const s of PROJECT_SAMPLES) {
+    const dateEnd = addDays(today, 365);
+    const dateStart = addDays(today, -30);
+    const contractData = {
+      contractNumber: `U/2026/${s.seq}`,
+      subject: s.subj,
+      amount: s.amount ?? undefined,
+      dateStart,
+      dateEnd,
+      paymentTerm: "30 dni",
+      documentTypeId: pick(docTypes, s.type)?.id,
+      statusId: s.finalized ? pick(contractStatuses, "Obowiązująca")?.id : null,
+      companyId: pick(companies, s.company)?.id,
+      locationId: pick(locations, s.loc)?.id,
+      domainId: pick(domains, s.domain)?.id,
+      natureId: pick(natures, s.nature)?.id,
+      currencyId: cur(s.currency)?.id,
+    };
+    const contract = await prisma.contract.upsert({
+      where: { identifier: `AMDSP/DYS/2026/${s.seq}` },
+      update: {
+        ...contractData,
+        contractors: { set: [{ id: `seed-contractor-${s.contractor + 1}` }] },
+      },
+      create: {
+        identifier: `AMDSP/DYS/2026/${s.seq}`,
+        ...contractData,
+        contractors: { connect: { id: `seed-contractor-${s.contractor + 1}` } },
+        ownerIds: owner ? { connect: { id: owner.id } } : undefined,
+        createdById: owner?.id,
+      },
+    });
+
+    const projectData = {
+      subject: s.subj,
+      statusId: pick(projectStatuses, s.status)?.id,
+      reviewer: s.reviewer,
+      lastNote: s.lastNote,
+      sentToSign: s.sentToSignDays !== null ? addDays(today, s.sentToSignDays) : null,
+    };
+    await prisma.project.upsert({
+      where: { identifier: s.identifier },
+      update: {
+        ...projectData,
+        contracts: { set: [{ id: contract.id }] },
+      },
+      create: {
+        identifier: s.identifier,
+        ...projectData,
+        owners: owner ? { connect: { id: owner.id } } : undefined,
+        contracts: { connect: { id: contract.id } },
+      },
+    });
+  }
+}
+
 async function main() {
   console.log("→ Seed słowników…");
   await seedDictionaries();
@@ -298,6 +412,8 @@ async function main() {
   await seedRolesAndUser();
   console.log("→ Seed przykładowych umów…");
   await seedSampleContracts();
+  console.log("→ Seed przykładowych projektów…");
+  await seedSampleProjects();
   console.log("✔ Seed zakończony.");
 }
 
