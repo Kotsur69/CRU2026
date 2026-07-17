@@ -53,7 +53,7 @@ export const COLUMN_DEFS: ColumnDef[] = [
   { id: "obsc", label: "OBSC", defaultVisible: true },
   { id: "currency", label: "Waluta", defaultVisible: false },
   { id: "owners", label: "Właściciel umowy", defaultVisible: true },
-  { id: "businessline", label: "Buissnesline", defaultVisible: true },
+  { id: "businessline", label: "Businessline", defaultVisible: true },
   { id: "contractors", label: "Kontrahenci", defaultVisible: true },
   { id: "otherAmountDesc", label: "Inne określenie wynagrodzenia", defaultVisible: false },
   { id: "domain", label: "Rodzaj umowy", defaultVisible: false },

@@ -96,7 +96,7 @@ export function SearchForm({ dicts }: { dicts: Dicts }) {
             <TextField name="identifier" label="Identyfikator" defaultValue={g("identifier")} />
             <Select name="type" label="Typ dokumentu" options={dicts.documentTypes} defaultValue={g("type")} />
             <TextField name="contractNumber" label="Numer umowy" defaultValue={g("contractNumber")} />
-            <Select name="businessline" label="Buissnesline" options={dicts.businesslines} defaultValue={g("businessline")} />
+            <Select name="businessline" label="Businessline" options={dicts.businesslines} defaultValue={g("businessline")} />
             <Select name="status" label="Status" options={dicts.statuses} defaultValue={g("status")} />
             <Select name="company" label="Spółka" options={dicts.companies} defaultValue={g("company")} />
 

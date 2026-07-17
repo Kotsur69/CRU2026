@@ -68,7 +68,7 @@ function FlagMark({ on }: { on: boolean }) {
 function Truncated({ text, className }: { text: string | null; className?: string }) {
   if (!text) return <>—</>;
   return (
-    <span className={cn("block max-w-[16rem] truncate", className)} title={text}>
+    <span className={cn("block max-w-[14rem] whitespace-normal break-words", className)}>
       {text}
     </span>
   );
@@ -237,14 +237,14 @@ export function ContractsTable({ contracts }: { contracts: ContractRow[] }) {
           openMenuAt(e.clientX, e.clientY);
         }}
       >
-        <table className="w-full text-sm">
-          <thead className="bg-muted/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.id}
                   className={cn(
-                    "px-3 py-2.5 font-semibold",
+                    "px-2 py-1.5 font-semibold",
                     RIGHT_ALIGN.includes(col.id) && "text-right",
                     CENTER_ALIGN.includes(col.id) && "text-center",
                   )}
@@ -269,7 +269,7 @@ export function ContractsTable({ contracts }: { contracts: ContractRow[] }) {
                   <td
                     key={col.id}
                     className={cn(
-                      "whitespace-nowrap px-3 py-2.5",
+                      "whitespace-normal break-words px-2 py-1.5 align-top",
                       RIGHT_ALIGN.includes(col.id) && "text-right",
                       CENTER_ALIGN.includes(col.id) && "text-center",
                     )}

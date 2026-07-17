@@ -134,7 +134,7 @@ export default async function UmowaPreviewPage({
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <Section title="Klasyfikacja">
           <dl>
-            <Field label="Buissnesline">{c.businessline?.name}</Field>
+            <Field label="Businessline">{c.businessline?.name}</Field>
             <Field label="Typ dokumentu">{c.documentType?.name}</Field>
             <Field label="Numer umowy">{c.contractNumber}</Field>
             <Field label="Rodzaj umowy">{c.domain?.name}</Field>
