@@ -24,12 +24,44 @@ $DbPass  = "cru"
 
 function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
+# Windows PowerShell 5.1 gotcha: pod $ErrorActionPreference = "Stop", KAŻDA linia,
+# którą program natywny wypisze na stderr (nawet zwykłe ostrzeżenie, np. deprecation
+# warning z Prisma czy "server may be running" z pg_ctl), zostaje zamieniona w błąd
+# przerywający skrypt — mimo że proces kończy się kodem 0. Dlatego każde wywołanie
+# programu natywnego idzie przez ten wrapper: EAP tymczasowo na "Continue" (stderr
+# tylko się wyświetla, nie przerywa), a o realnym niepowodzeniu decyduje $LASTEXITCODE.
+function Invoke-Checked {
+    param(
+        [Parameter(Mandatory)][string]$FailMessage,
+        [Parameter(Mandatory)][scriptblock]$Action
+    )
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $Action
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "$FailMessage (exit code $LASTEXITCODE)"
+    }
+}
+
 # yarn nie jest na PATH na tej maszynie — fallback na `corepack yarn`.
 $script:UseCorepack = -not (Get-Command yarn -ErrorAction SilentlyContinue)
 function Invoke-Yarn {
     param([Parameter(ValueFromRemainingArguments = $true)]$YarnArgs)
-    if ($script:UseCorepack) { corepack yarn @YarnArgs } else { yarn @YarnArgs }
+    Invoke-Checked -FailMessage "yarn $($YarnArgs -join ' ') nie powiodło się" -Action {
+        if ($script:UseCorepack) { corepack yarn @YarnArgs } else { yarn @YarnArgs }
+    }
 }
+
+# Nie pytaj interaktywnie o nic (corepack potrafi zapytać o zgodę na pobranie yarn) —
+# proces działa w tle/nieinteraktywnie, więc prompt = ciche zawieszenie na zawsze.
+$env:COREPACK_ENABLE_DOWNLOAD_PROMPT = "0"
+$env:CI = "1"
+
+try {
 
 # 1. Konfiguracja (.env) — wstrzykuje świeży NEXTAUTH_SECRET
 Step "Konfiguracja (.env)"
@@ -78,7 +110,13 @@ if (-not $?) {
         throw "Brak katalogu danych: $PgData. Podaj poprawny -PgData albo zainicjuj bazę (initdb)."
     }
     $log = Join-Path $PgData "server.log"
+    # Nie używamy Invoke-Checked tu celowo: "inny serwer może być uruchomiony" to
+    # ostrzeżenie o stale postmaster.pid, pg_ctl mimo to próbuje wystartować — to nie
+    # jest błąd. O sukcesie i tak decyduje pętla pg_isready poniżej, nie kod wyjścia.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     & $pgCtl -D "$PgData" -l "$log" start | Out-Null
+    $ErrorActionPreference = $prevEAP
 
     Write-Host "Czekam na gotowość Postgresa..." -NoNewline
     $ready = $false
@@ -134,3 +172,9 @@ if ($NoDev) {
 
 Step "Start dev  ->  http://localhost:$Port  (login: admin / admin123)"
 Invoke-Yarn dev
+
+} catch {
+    Write-Host "`n=== BŁĄD ===" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
+}
