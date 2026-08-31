@@ -1,7 +1,9 @@
 # CRU2026 - Stan projektu
 
 ## Opis projektu
-CRU2026 to wewnętrzny system do zarządzania umowami organizacji - scentralizowany rejestr obejmujący docelowo tysiące umów, dokumentację przechowywaną poza bazą (docelowe miejsce niezdecydowane - na razie serwer bytomski, patrz architektura) oraz kalendarz końca umów z automatycznymi przypomnieniami dla osób odpowiedzialnych (czy umowa ma zostać zakończona, czy odnowiona). To wyłącznie własny, wewnętrzny system - **bez** raportowania do rządowego Centralnego Rejestru Umów (usunięte 2026-07-15, nie ma znaczenia dla tego projektu). Jedyny element związany z administracją państwową to wyszukiwarka REGON (GUS), używana tylko do pobrania danych kontrahenta.
+CRU2026 to **zastąpienie istniejącego systemu CRU** (Centralny Rejestr Umów, CakePHP + MySQL 5.1, serwer w Bytomiu `10.222.125.213`) aplikacją utrzymywaną wewnętrznie: **Next.js 14 + TypeScript + Prisma + własny PostgreSQL 16**, z **jednorazową migracją danych historycznych** ze zrzutu `cru.sql`. Druga, równorzędna część zakresu: **masowe elektroniczne podpisywanie umów przez Adobe Acrobat Sign**. To wyłącznie własny, wewnętrzny system - **bez** raportowania do rządowego Centralnego Rejestru Umów (usunięte 2026-07-15, nie ma znaczenia dla tego projektu).
+
+Poza bieżącym zakresem (były w greenfield planie z 15.07): kalendarz i automatyczne przypomnienia o końcu umów, wyszukiwarka REGON (GUS), Entra ID SSO, AI Copilot. Przy własnej bazie i własnej tożsamości **żadna z tych rzeczy nie jest już blokowana architekturą** — to kwestia priorytetu, nie wykonalności.
 
 ## Skala
 - ~100 użytkowników
@@ -9,7 +11,17 @@ CRU2026 to wewnętrzny system do zarządzania umowami organizacji - scentralizow
 - Dane mogą być poufne - mieszczą się w istniejącej klasyfikacji bezpieczeństwa SharePoint; to nie jest system rządowy, dane historyczne w pełni dostępne (fizyczny serwer w Bytomiu)
 - Plany przyszłościowe (nie wcześniej niż za rok, poza obecnym zakresem): wdrożenie światowe poza Polską - będzie wymagało rozważenia migracji hostingu na AWS zamiast Abacus
 
-## ⚠️ PIVOT ARCHITEKTONICZNY (2026-07-17) — czytaj przed sekcją poniżej
+## ⚠️ KIERUNEK BIEŻĄCY (2026-08-31) — czytaj przed sekcjami poniżej
+Korekta kierunku z 31.07, po analizie zrzutu bazy legacy `cru.sql`. **Nie pracujemy już na bazie legacy.** Budujemy **własny PostgreSQL 16** i **migrujemy do niego dane** ze zrzutu; stack to **Next.js 14 (App Router) + TypeScript + Prisma**. Adobe Acrobat Sign pozostaje główną nową funkcją. Cutover przestaje być „nadpisaniem plików `.php`" — jest **równoległym biegiem obu rejestrów i datowanym przełącznikiem danych**.
+
+Powód nie jest kosmetyczny. Zrzut pokazał, że (1) serwer legacy to **MySQL 5.1.73**, a Prisma wymaga 5.6+ — praca wprost na tej bazie oznaczałaby porzucenie ORM-a albo ręczny SQL przeciwko silnikowi bez wsparcia od 2013 r.; (2) `users` w CRU to **VIEW na zewnętrzną bazę katalogową `am_admin`**, której w zrzucie nie ma — nie dostaliśmy loginów ani hashy haseł, więc tożsamość i tak musimy przejąć na własność; (3) Umowy, Projekty i Dział ryzyka to **jedna tabela** z dyskryminatorem `contract_status.project`, co zamyka pytanie o „schemat modułu `/project`". Szczegóły i fazy: `plan.md`, log 2026-08-31.
+
+## KIERUNEK 2026-07-31 — poprzedni krok, patrz kierunek bieżący wyżej
+Rozszerzenie pivotu z 17.07. **Legacy nie zostaje już nietknięte.** Pliki `.php` istniejącej aplikacji CRU zostają **nadpisane**, a ich funkcje napisane od nowa w **Node.js** — na tej samej bazie MySQL i tych samych plikach PDF w Bytomiu, bez migracji danych i bez drugiego rejestru. Adobe Acrobat Sign pozostaje główną nową funkcją. Powód: kod legacy należy do zewnętrznego vendora („W.B. Projekt", lifetime support, brak dostępu do repo), więc każda zmiana wymaga jego udziału — przejęcie aplikacji zwraca kontrolę organizacji.
+
+Kolejność prac jest świadoma: **najpierw wartość (podpis elektroniczny), na końcu podmiana plików `.php`**. Cutover to najbardziej nieodwracalny krok projektu — poprzedza go pełna kopia katalogu aplikacji (jedyny istniejący egzemplarz kodu legacy), inwentarz zależności i przełączanie trasa po trasie z rollbackiem. Nowe prereki względem 17.07: dostęp **do katalogu aplikacji**, nie tylko do bazy, oraz zgoda właściciela serwera i vendora na zastąpienie aplikacji. Szczegóły i fazy: `plan.md`, log 2026-07-31.
+
+## PIVOT ARCHITEKTONICZNY (2026-07-17) — poprzedni krok, patrz kierunek bieżący wyżej
 Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js) został **porzucony**. Nowa strategia = **strangler / Database-as-API**: legacy CakePHP + jego MySQL zostają nietknięte w Bytomiu (`10.222.125.213`), a my dokładamy JEDNĄ nową funkcję — **masowe podpisywanie umów przez Adobe Sign** na module `/cru/index.php/project`. Nowy stack: React SPA (Vite) + Node/Express, dev na VirtualBox/Debian → **prod na wewnętrznym serwerze w Katowicach** (sieć firmowa AM, Docker), Nginx+SSL(Let's Encrypt)+pm2. Baza+PDF w Bytomiu po **sieci wewnętrznej (LAN), bez VPN** (VPN tylko gdyby padło na zewnętrzny VPS). Publicznie wystawiony tylko **jeden endpoint HTTPS** (osobna domena, np. `podpisy.firma.com`) — wyłącznie dla Adobe (strona podpisu + webhook). Backend read-write wprost do tabel legacy. Backend pisze read-write wprost do tabel legacy. Sekcja „Zdecydowana architektura (2026-07-15)" poniżej jest **historyczna** — nieaktualna od pivotu. Szczegóły i otwarte kwestie: log 2026-07-17.
 
 ## Zdecydowana architektura (2026-07-15) — HISTORYCZNE, patrz pivot wyżej
@@ -34,11 +46,49 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 ## Struktura dokumentacji projektu
 - `status_projektu.md` - ten plik, stan bieżący (aktualizować na bieżąco)
 - `plan.md` - plan wdrożenia w fazach
-- `historia_wersji/Historia wersji/` - raporty wersji (`CRU2026_Raport_Wersji_X.X.docx`)
+- `historia_wersji/Historia wersji/` - raporty wersji (`CRU2026_Raport_Wersji_X.X.docx`). Numeracja skorygowana: dawny `1.0` wycofany, obowiązują `0.1` (okres 15.07-31.07) i `0.2` (27.08-31.08) — projekt jest przed pierwszym wydaniem produkcyjnym, więc numer 1.0 był przedwczesny
 - `historia_wersji/Opis aplikacji/` - opis aplikacji dla zarządu (`OPIS_APLIKACJI_CRU2026.docx`)
 - `historia_wersji/Szablony/` - szablony do wykorzystania
 
 ## Log sesji
+
+### 2026-08-31
+- **Zrzut bazy legacy dostarczony.** `cru.sql` (45,7 MB, 447 528 linii, 35 tabel, HeidiSQL, MySQL 5.1.73) trafił do repo. To zamknęło Fazę 0a w części schematowej — nie potrzebujemy już `mysqldump --no-data` od adminów.
+- **Zmiana kierunku (decyzja Mati): „there should be postgresql. also we should build a code for nowadays standards".** Odchodzimy od pracy na bazie legacy. Budujemy **własny PostgreSQL 16** + **migrację danych**, stack **Next.js 14 + TypeScript + Prisma**. Poprzedni kierunek (nadpisanie `.php` na tej samej bazie MySQL, bez migracji) przestaje obowiązywać.
+- **Uzasadnienie techniczne (nie tylko preferencja):**
+  - **MySQL 5.1.73** na serwerze legacy vs. wymagane przez Prismę 5.6+ — Prisma nie połączy się z tą bazą.
+  - **`users` to VIEW**, nie tabela: `am_admin.users JOIN am_admin.users_systems WHERE system_id = 7`. Bazy `am_admin` w zrzucie nie ma → **zero loginów, nazwisk i hashy haseł**. Tożsamość przechodzi na naszą stronę niezależnie od reszty decyzji. To jednocześnie **zamyka otwarte pytanie „hashing haseł w `users` legacy"** — nie ma czego odtwarzać.
+  - **Umowy / Projekty / Dział ryzyka = jedna tabela `contract`**, dyskryminator `contract_status.project` (0/1/2). Nie ma osobnej encji „projekt" — **zamyka otwarte pytanie o schemat modułu `/project`**.
+  - **`Access deny` na ośmiu modułach wyjaśnione:** tabela `access` definiuje 10 wymiarów widoczności, `useraccess(user_id, key, access_id)` przydziela je punktowo. Moduł Projekty (`access_id = 9`) ma nadanych 5 użytkowników; konto Mati nie było wśród nich. **Zakres ośmiu modułów przestał być niewyceniamy** — mamy ich schemat.
+- **Błędy modelowania wyłapane i poprawione w schemacie:** lokalizacje są relacją wiele-do-wielu (`contract_has_location`, 21 636 wierszy — poprzedni schemat zgubiłby je po cichu); Projekty i Dział ryzyka to statusy, nie encje; 10 406 z 20 624 umów to **aneksy** (self-relation `parent_id`).
+- **Zrobione w kodzie (ta sesja):**
+  - `nextjs_space/prisma/schema.prisma` — przepisany na PostgreSQL, 29 modeli, klucze legacy zachowane 1:1, kolumny o niepotwierdzonej semantyce (`bill`, `sps_id`, `sps_last_version`) przeniesione zamiast skasowane.
+  - `nextjs_space/scripts/legacy/dump-parser.ts` + `import.ts` (`yarn db:import`) — ETL ze zrzutu. Parser strumieniowy, świadomy cudzysłowów; sentinele `0000-00-00` (22 384 wystąpienia), trójstanowe boole `-1/0/1`, soft delete. **Przebieg kontrolny: 457 542 wiersze w 1,8 s, 0 wierszy nieparsowalnych, 93 wiszące klucze obce** (`mailing_lists.mailing_group_id` 54, `contract_has_location.contract_id` 25, `contract.parent_id` 8, `contract.buissnesline_id` 4, `opiniontypes.group_id` 1, `contract_users.user_id` 1) — zerowane i policzone.
+  - `lib/auth.ts` (NextAuth na nowym modelu `User`, konta-zaślepki bez hasła nie mogą się zalogować), `lib/format.ts`, `app/(app)/umowy/page.tsx`, tabele Umów i Projektów.
+- **Znaleziony przy okazji błąd zastany:** `prisma generate` nigdy nie mogło się w tym repo wykonać — `output` wskazywał na `node_modules/@prisma/client`, co Prisma blokuje. Poprawione na `node_modules/.prisma/client`.
+- **Blocker rozwiązany — PostgreSQL bez uprawnień administratora:** przenośne binaria EDB (PostgreSQL 16.9, ZIP) rozpakowane do `~/pgsql`, klaster w `~/pgsql/data`, serwer na `localhost:5432`, baza `cru2026`. Docker/WSL/instalator nie były potrzebne. Prod nadal wg `docker-compose.yml` (`postgres:16-alpine`).
+- **Nowy prereq (blokujący logowanie realnych użytkowników):** **eksport katalogu `am_admin`** (id, login, imię, nazwisko, e-mail, status). Bez niego wszyscy użytkownicy pozostają zaślepkami i działa tylko konto serwisowe.
+- **Konsekwencja dla compliance:** przy własnym Postgresie na infrastrukturze firmowej temat rezydencji danych dotyczy już **tylko chmury Adobe**, nie samego rejestru. To zawęża zakres security sign-offu.
+- **Zaktualizowane dokumenty:** `plan.md` (przepisany: uzasadnienie zmiany, architektura Next.js/Prisma/Postgres, zasady integralności migracji, Fazy 0–6 z nowym cutoverem), `status_projektu.md` (ten wpis + nowy baner kierunku + opis projektu + otwarte tematy). ⚠️ **Do zrobienia:** `CRU2026_Raport_Wersji_1.0.docx` i `OPIS_APLIKACJI_CRU2026.docx` nie są jeszcze zaktualizowane pod ten kierunek.
+
+- **Eksport katalogu PDF z Bytomia dostarczony.** Paczka `CRU260811` — **39 280 plików, 49 GB** (27 288 pdf, 6 355 msg, 3 184 docx, 1 788 doc, reszta xls/xlsx/odt/zip/7z/jpg). To zamyka drugą blokadę Fazy 0: rejestr przestaje być „pusty w połowie”.
+- **Rekoncyliacja plików z bazą (nowe `yarn db:verify-files`):** 39 271 rekordów `Attachment` vs 39 280 plików na dysku. **39 263 rekordy (99,98 %) mają swoje bajty** — 39 256 zgodnych 1:1 i 7 zgodnych po md5. **8 rekordów bez pliku** (umowy 13193, 13195, 13271 ×2, 14041 ×3, 14001) — do wyjaśnienia z administratorami. **17 plików bez rekordu** (sieroty, w tym `test.txt`) — nieszkodliwe, ale sygnalizują niedokończony DELETE w legacy albo nieświeży eksport.
+- **Wzorzec legacy wyłapany: rozszerzenie w bazie ≠ rozszerzenie na dysku.** 7 uploadów, których oryginalna nazwa miała spacje lub dodatkowe kropki, wylądowało na dysku z uciętym rozszerzeniem (`.A`, `.12`, `.10`, `.UK`, `. prawnej montstal-…`, `.pdf.filepart`). Wszystkie 7 sprawdzone bajtowo — to **kompletne PDF-y** (`%PDF` + `%%EOF`), nie uszkodzone transfery; mylące `.filepart` też. Stem md5 jest unikalny w całym eksporcie (39 280 plików = 39 280 różnych stemów), więc rozwiązywanie po md5 jest jednoznaczne.
+- **Zrobione w kodzie (ta sesja):**
+  - `lib/storage/local-adapter.ts` — fallback po stemie md5 (7 plików wyżej) + **prawdziwe typy MIME**. Wcześniej `stat()` nie ustawiał `mimeType`, więc każdy załącznik szedł jako `application/octet-stream` i PDF nie otwierał się w przeglądarce. Nazwa i typ brane są z **klucza z bazy**, nie ze zmanglowanej nazwy pliku — inaczej te 7 PDF-ów nadal by się nie podglądało. Klucze `list()` znormalizowane do `/` (na Windows `path.join` dawał `\`).
+  - `scripts/legacy/verify-attachments.ts` + `yarn db:verify-files` — powtarzalna rekoncyliacja (realizacja zasady 4 z `plan.md`); rozdziela EXACT / rozszerzenie / BRAK / sieroty, kod wyjścia 1 przy brakujących plikach, więc nadaje się na bramkę przed cutoverem.
+  - Smoke test przez adapter: trafienie 1:1, wszystkie 3 warianty zmanglowane, plik brakujący (→ 404) i próba path traversal (→ wyjątek). `npx tsc --noEmit` czysty.
+- **Storage wskazuje na eksport w miejscu, bez kopiowania:** `STORAGE_LOCAL_ROOT="C:/Users/mmazur/Downloads/CRU260811/CRU260811"`. ⚠️ Na dysku C: zostało **71 GB wolnego**, więc kopia 49 GB jest niewykonalna bez porządków. **Do zrobienia:** przenieść eksport z `Downloads` (katalog ulotny) w stabilną lokalizację i zaktualizować `.env`.
+- **Raport wersji 0.2 napisany** (`historia_wersji/Historia wersji/CRU2026_Raport_Wersji_0.2.docx`), w konwencji raportów AMSteel_Quote: metryka, kumulująca się historia wersji, zmiany w podziale na obszary, znane problemy, plany. Obszary dostosowane do kierunku z 31.08 — „Kalendarz gwarancji i przypomnienia” → **Migracja danych ze starego systemu**, „Integracja SharePoint” → **Dokumenty i załączniki**; z opisu obszaru logowania usunięto nieaktualne Entra ID SSO. Formatowanie zachowane przez klonowanie wierszy na poziomie XML (`add_row` gubi styl). Numeracja: raport `1.0` wycofany jako przedwczesny, obowiązują `0.1` i `0.2`.
+
+### 2026-07-31
+- **Doprecyzowanie kierunku (decyzja Mati):** bieżąca wersja to **nadpisanie plików `.php` istniejącej aplikacji i napisanie ich funkcji od nowa w Node.js**, na tej samej bazie MySQL i tych samych plikach PDF, bez migracji danych. To rozszerzenie pivotu z 17.07: obok dołożenia podpisu elektronicznego wymieniamy również warstwę aplikacyjną. Konsekwencja: teza „legacy zostaje nietknięte" z 17.07 przestaje obowiązywać.
+- **Konsekwencje dla zakresu:** przejęcie aplikacji oznacza docelowo odtworzenie wszystkich 10 modułów legacy, a nie jednego. Osiem z nich (Dział ryzyka, Supply chain, Kontrahenci, Grupy, Lokalizacja dostępy, Dostępy, Raporty, Mailing) nie zostało objętych audytem — konto Mati dostawało `Access deny` — więc ich zakresu **nie da się dziś wycenić**. Rozwiąże to zrzut schematu + wgląd w działające ekrany.
+- **Nowe prereki (poza tym, o co proszono 17.07):** dostęp do **katalogu aplikacji `.php`** (odczyt, docelowo zapis) oraz zgoda właściciela serwera **i vendora** na zastąpienie aplikacji. Mail z 17.07 dotyczył wyłącznie dostępu do bazy i katalogu PDF — to osobna, istotnie szersza prośba, do wysłania.
+- **Nowe zasady bezpieczeństwa cutoveru (dopisane do `plan.md`):** (5) pełna, zweryfikowana kopia katalogu `.php` przed jakąkolwiek podmianą — to jedyny istniejący egzemplarz kodu legacy; (6) cutover modułami, nie big-bangiem, z rollbackiem w jednym kroku; (7) inwentarz tego, co jeszcze korzysta z tych plików (panel `/admin` vendora, crony, integracje, linki w mailach).
+- **Otwarte po tej zmianie:** czy produkcja po cutoverze stoi na wewnętrznym serwerze w Katowicach (decyzja z 17.07), czy bezpośrednio na serwerze bytomskim — skoro przejmujemy adres i rolę legacy. Oraz: czy „lifetime support" vendora ma zapisy blokujące zastąpienie jego aplikacji.
+- **Ryzyko odnotowane (Luna, przyjęte przez Mati):** podmiana plików na produkcyjnym serwerze bez dostępu do repo i bez wiedzy o pozostałych konsumentach tych plików jest istotnie ryzykowniejsza niż wariant strangler z 17.07. Mitygacja = zasady 5–7 wyżej i kolejność faz (cutover jako Faza 5, po dowiezieniu podpisu).
+- **Zaktualizowane dokumenty:** `plan.md` (przepisany pod nowy kierunek: Fazy 0–6, zasady cutoveru), `status_projektu.md` (ten wpis + nowy baner kierunku + opis projektu), `CRU2026_Raport_Wersji_1.0.docx` (nowy wiersz „Zmiana kierunku" + podsumowanie wersji), `OPIS_APLIKACJI_CRU2026.docx` (przepisany dla zarządu: usunięte Entra ID SSO, REGON i przypomnienia 90/30/7; sekcja 4 zamieniona na masowe podpisywanie umów, sekcja 5 na przechowywanie dokumentów). Kopie zapasowe obu `.docx` z sufiksem `_backup_przed_nodejs_20260731`.
 
 ### 2026-07-17
 - **PIVOT strategii (potwierdzony przez Mati).** Porzucamy greenfield rewrite (Abacus/Postgres + replika 1:1 Next.js). Nowy kierunek = **Database-as-API / strangler**: legacy CakePHP i jego MySQL zostają nietknięte w Bytomiu, dokładamy tylko funkcję **masowego podpisywania umów przez Adobe Sign** na module projektów (`/cru/index.php/project`).
@@ -80,17 +130,32 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 - **Zmiana: docelowe miejsce przechowywania plików niezdecydowane (ta sesja, później):** SharePoint miał być stałym rozwiązaniem, ale użytkownicy zgłaszają, że jest kapryśny i wolny; firma prowadzi rozmowy z AWS, który może zostać docelową infrastrukturą (termin nieznany). Obecnie pliki (bieżące, nie tylko historyczne) leżą głównie na serwerze w Bytomiu. Na razie zakładamy połączenie aplikacji z serwerem bytomskim jako źródłem plików, a techniczne rozwiązanie tej integracji zostawiamy Abacusowi (hosting/dev partner) - nie blokuje to rejestru/metadanych w Postgresie, które zostają bez zmian. Zaktualizowano `plan.md` (Stack techniczny, Model danych, Faza 2, Otwarte pytania)
 
 ## Następne kroki / otwarte tematy
-- [ ] **Faza 0 (nowa, blokująca):** audyt legacy strony (index.php) - Mati przechodzi przez ekrany/funkcje, spisujemy wszystko, potem osobny dokument zakresu do akceptacji, potem replika w Next.js
-- [ ] Zgłoszenie do IT: app registration w Entra ID (Graph API + SSO scopes)
-- [ ] Provisioning bazy Postgres w Abacus
-- [ ] Scaffold repo Next.js (wzorem AMSteel_Quote / SafetyHub)
-- [ ] Doprecyzowanie typów umów i pól rejestru z zespołem
-- [ ] Ustalenie: metadane wpisywane ręcznie przy dodaniu umowy, czy automatycznie wyciągane z treści PDF (OCR/document AI) - różne nakłady pracy
-- [ ] Plan migracji istniejących umów (Excel/skany) do rejestru
-- [ ] Podgląd dokumentu w aplikacji (ikona „oko") - Faza 2, patrz plan.md
-- [ ] Potwierdzenie z IT: czy licencja M365 Copilot pokrywa Copilot Studio (blokuje Fazę 6, kosmetyczna/niski priorytet)
-- [ ] Rejestracja klucza API do usługi REGON (GUS BIR1) - blokuje integrację w Fazie 2
-- [ ] Exchange Application Access Policy ograniczająca wysyłkę maili do jednej skrzynki (`mateusz.mazur@arcelormittal.com`) - do zgłoszenia razem z app registration w Fazie 1
-- [ ] Potwierdzić: wysyłka z osobistego adresu Mati czy z dedykowanej skrzynki współdzielonej - wpływa na utrzymanie w przyszłości
+
+### Blokujące (Faza 0)
+- [ ] **Eksport katalogu `am_admin`** (id, login, imię, nazwisko, e-mail, status) — **nowe 2026-08-31**, blokuje logowanie realnych użytkowników. `users` w CRU to widok na tę bazę, w zrzucie jej nie ma
+- [ ] Zgoda vendora „W.B. Projekt" — czy „lifetime support" ma zapisy blokujące wygaszenie jego aplikacji lub kończące wsparcie
+- [ ] Konto Adobe Acrobat Sign z dostępem API (business/enterprise, OAuth S2S) + sandbox — **płatny prereq**, potwierdzić z firmą
+- [ ] Poziom podpisu z działem prawnym: zwykły e-podpis eIDAS vs kwalifikowany QES
+- [ ] Security/compliance sign-off — **zawężony 2026-08-31:** rejestr stoi na własnym Postgresie na infrastrukturze firmowej, więc rezydencja danych dotyczy już tylko chmury Adobe
+
+### Do rozstrzygnięcia
+- [ ] Gdzie stoi produkcja: wewnętrzny serwer w Katowicach czy serwer bytomski
+- [ ] **8 załączników bez pliku w eksporcie** — dopytać administratorów serwera bytomskiego; pełna lista z ID umów: `yarn db:verify-files`
+- [ ] **Przenieść eksport plików z `Downloads` w stabilną lokalizację** (49 GB, wolne na C: 71 GB) i zaktualizować `STORAGE_LOCAL_ROOT` w `.env`
+- [ ] Model „ważnych osób" podpisujących: stały preset czy definiowany per-umowa (wpływa na UI Fazy 4)
+- [ ] Docelowe miejsce przechowywania plików (serwer bytomski vs. SharePoint vs. AWS) — czeka na rozstrzygnięcie firmowych rozmów z AWS; `StorageAdapter` izoluje tę decyzję od schematu
+- [ ] Semantyka kolumn `bill`, `sps_id`, `sps_last_version` — przeniesione ze zrzutu „na wszelki wypadek", do potwierdzenia z użytkownikami
+- [ ] Aktualizacja `OPIS_APLIKACJI_CRU2026.docx` pod kierunek z 31.08 (raport wersji już zrobiony — `CRU2026_Raport_Wersji_0.2.docx`)
+
+### Zamknięte
 - [x] Pozyskanie wytycznych brandowych ArcelorMittal (logo, fonty, kolory) - dostarczone 2026-07-15, patrz `historia_wersji/Branding/`. Paleta kolorów to przybliżenie zmierzone z assetów, podmienić jeśli pojawi się oficjalny brand guide z dokładnymi hex/CMYK
-- [ ] Docelowe miejsce przechowywania plików (SharePoint vs. serwer bytomski vs. AWS) - czeka na rozstrzygnięcie firmowych rozmów z AWS; na razie zakładamy serwer bytomski, integrację robi Abacus
+- [x] Audyt legacy strony (Faza 0a) - zrobiony 2026-07-16, wynik w `historia_wersji/audyt_legacy_strony.md`
+- [x] **Zrzut schematu i danych legacy** — dostarczony jako `cru.sql` (2026-08-31). Zastępuje prośbę o `mysqldump --no-data`
+- [x] **Hashing haseł w `users` legacy** — pytanie bezprzedmiotowe: `users` to VIEW na zewnętrzny katalog `am_admin`, w CRU nie ma żadnych haseł. Tożsamość przejmujemy na własność (2026-08-31)
+- [x] **Schemat modułu `/project`** — nie ma osobnego modelu: Projekty to `contract` ze statusem o `project = 1` (2026-08-31)
+- [x] **Zakres ośmiu nieaudytowanych modułów** — znany ze schematu, wszystkie mają odpowiedniki w `schema.prisma`; Faza 6 jest wyceniana (2026-08-31)
+- [x] **Dostęp do katalogu PDF w Bytomiu** — dostarczony 2026-08-31 jako eksport `CRU260811` (39 280 plików, 49 GB). Pokrycie 99,98 % rekordów `Attachment`; weryfikacja: `yarn db:verify-files`
+- [x] **PostgreSQL do developmentu bez uprawnień administratora** — przenośne binaria EDB 16.9 w `~/pgsql`, klaster w `~/pgsql/data`, baza `cru2026` na `localhost:5432` (2026-08-31)
+
+### Nieaktualne po pivocie (zapis historyczny)
+Wypadły z zakresu: app registration w Entra ID (SSO + Graph), provisioning Postgresa **w Abacus**, klucz API REGON (GUS BIR1), Exchange Application Access Policy i wysyłka maili z dedykowanej skrzynki, licencja Copilot Studio. Szczegóły: log 2026-07-17 i 2026-07-31. ⚠️ **Uwaga (2026-08-31):** „własny Postgres" i „migracja danych historycznych" **wróciły do zakresu** — patrz kierunek bieżący; nieaktualny pozostaje wyłącznie hosting bazy w Abacus.
