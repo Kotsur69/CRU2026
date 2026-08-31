@@ -16,19 +16,24 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.login || !credentials.password) return null;
+
         const user = await prisma.user.findUnique({
           where: { login: credentials.login },
-          include: { role: true },
         });
-        if (!user || !user.active) return null;
+        // Placeholder rows imported from the legacy directory carry no password and
+        // cannot sign in until an administrator activates the account.
+        if (!user || !user.active || !user.passwordHash) return null;
+
         const ok = await bcrypt.compare(credentials.password, user.passwordHash);
         if (!ok) return null;
+
+        const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ");
         return {
-          id: user.id,
-          name: user.fullName,
+          id: String(user.id),
+          name: fullName || user.login || String(user.id),
           email: user.email ?? undefined,
-          login: user.login,
-          role: user.role.code,
+          login: user.login ?? undefined,
+          role: user.isAdmin ? "admin" : "user",
         };
       },
     }),

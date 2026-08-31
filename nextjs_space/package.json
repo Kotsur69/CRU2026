@@ -11,6 +11,8 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx --require dotenv/config scripts/seed.ts",
+    "db:import": "tsx --require dotenv/config scripts/legacy/import.ts",
+    "db:verify-files": "tsx --require dotenv/config scripts/legacy/verify-attachments.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {

@@ -8,7 +8,7 @@ import { formatDate } from "@/lib/format";
 // legacy nie dokumentuje panelu wyboru kolumn dla siatki Projektów, w przeciwieństwie
 // do Umów), 1:1 z audytem (historia_wersji/audyt_legacy_strony.md, sekcja 2.3).
 export interface ProjectRow {
-  id: string;
+  id: number;
   identifier: string;
   statusName: string | null;
   owners: string[];

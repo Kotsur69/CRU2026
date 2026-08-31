@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { contractorLabel, userLabel } from "@/lib/format";
 import { SearchForm } from "@/features/projekty/search-form";
 import { ProjectsTable, type ProjectRow } from "@/components/projekty/projects-table";
 
@@ -8,83 +9,181 @@ export const dynamic = "force-dynamic";
 
 type SP = Record<string, string | undefined>;
 
-// Projekt w legacy to rekord Umowy w statusie workflow (patrz audyt sekcja 2) — dlatego
-// większość filtrów celuje w powiązaną Umowę (`contracts: { some: {...} }`), a tylko
-// status/właściciel/notatka/opiniujący/data wysłania żyją bezpośrednio na Project.
-function buildWhere(sp: SP): Prisma.ProjectWhereInput {
-  const and: Prisma.ProjectWhereInput[] = [];
-  if (sp.identifier) and.push({ identifier: { contains: sp.identifier, mode: "insensitive" } });
-  if (sp.status) and.push({ statusId: sp.status });
-  if (sp.owner) and.push({ owners: { some: { id: sp.owner } } });
+const MAX_PAGE_SIZE = 500;
+const MIN_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 15;
 
-  const contractAnd: Prisma.ContractWhereInput[] = [];
-  if (sp.contractIdentifier) {
-    contractAnd.push({ identifier: { contains: sp.contractIdentifier, mode: "insensitive" } });
-  }
+/** Query-string values are untrusted: only a clean positive integer is accepted. */
+function intParam(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+// A project is not a separate table in the legacy data: it is a row of `contract`
+// whose status carries the `project` discriminator (see the audit, section 2).
+// Every filter therefore targets Contract directly.
+function buildWhere(sp: SP): Prisma.ContractWhereInput {
+  const and: Prisma.ContractWhereInput[] = [
+    // Legacy soft delete — deleted rows never appear in the register.
+    { isDeleted: false },
+    { status: { kind: "PROJECT" } },
+  ];
+
+  // The form offers two identifier fields; both search the one legacy column.
+  const identifier = sp.identifier || sp.contractIdentifier;
+  if (identifier) and.push({ identifier: { contains: identifier, mode: "insensitive" } });
   if (sp.contractReference) {
-    contractAnd.push({ contractNumber: { contains: sp.contractReference, mode: "insensitive" } });
+    and.push({ contractReference: { contains: sp.contractReference, mode: "insensitive" } });
   }
-  if (sp.type) contractAnd.push({ documentTypeId: sp.type });
-  if (sp.businessline) contractAnd.push({ businesslineId: sp.businessline });
-  if (sp.company) contractAnd.push({ companyId: sp.company });
-  if (sp.location) contractAnd.push({ locationId: sp.location });
-  if (sp.domain) contractAnd.push({ domainId: sp.domain });
-  if (sp.contractor) contractAnd.push({ contractors: { some: { id: sp.contractor } } });
-  if (sp.nip) contractAnd.push({ contractors: { some: { nip: { contains: sp.nip } } } });
-  if (sp.companyConnected === "1") contractAnd.push({ companyConnected: true });
-  if (contractAnd.length) and.push({ contracts: { some: { AND: contractAnd } } });
 
-  return and.length ? { AND: and } : {};
+  const status = intParam(sp.status);
+  if (status !== undefined) and.push({ statusId: status });
+
+  // The project owner is a full-access row in contract_users, not a read-only grant.
+  const owner = intParam(sp.owner);
+  if (owner !== undefined) and.push({ userAccess: { some: { userId: owner, readOnly: false } } });
+
+  const documentType = intParam(sp.type);
+  if (documentType !== undefined) and.push({ documentTypeId: documentType });
+
+  const businessline = intParam(sp.businessline);
+  if (businessline !== undefined) and.push({ businesslineId: businessline });
+
+  const company = intParam(sp.company);
+  if (company !== undefined) and.push({ companyId: company });
+
+  // A contract carries one primary location plus any number of linked ones; the legacy
+  // register matches either.
+  const location = intParam(sp.location);
+  if (location !== undefined) {
+    and.push({
+      OR: [{ primaryLocationId: location }, { locations: { some: { locationId: location } } }],
+    });
+  }
+
+  const domain = intParam(sp.domain);
+  if (domain !== undefined) and.push({ domainId: domain });
+
+  const contractor = intParam(sp.contractor);
+  if (contractor !== undefined) and.push({ contractorId: contractor });
+
+  if (sp.nip) and.push({ contractor: { vatId: { contains: sp.nip } } });
+  if (sp.companyConnected === "1") and.push({ companiesConnected: true });
+
+  return { AND: and };
+}
+
+/** Dictionary options for the filter form. Ids are stringified for the select values. */
+async function loadDictionaries() {
+  const [documentTypes, statuses, companies, locations, domains, businesslines, contractors, owners] =
+    await Promise.all([
+      prisma.documentType.findMany({
+        where: { active: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+      prisma.contractStatus.findMany({
+        where: { active: true, kind: "PROJECT" },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+      prisma.company.findMany({
+        where: { active: true },
+        orderBy: [{ sortOrder: "asc" }, { shortName: "asc" }],
+      }),
+      prisma.location.findMany({
+        where: { active: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+      prisma.domain.findMany({
+        where: { active: true, kind: "GENERAL" },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+      prisma.businessline.findMany({
+        where: { active: true },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      }),
+      prisma.contractor.findMany({
+        where: { isDeleted: false },
+        orderBy: [{ shortName: "asc" }, { fullName: "asc" }],
+        select: { id: true, shortName: true, fullName: true },
+      }),
+      prisma.user.findMany({
+        where: { active: true },
+        orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { login: "asc" }],
+        select: { id: true, firstName: true, lastName: true, login: true },
+      }),
+    ]);
+
+  return {
+    documentTypes: documentTypes.map((d) => ({ id: String(d.id), name: d.name })),
+    statuses: statuses.map((s) => ({ id: String(s.id), name: s.name })),
+    companies: companies.map((c) => ({ id: String(c.id), name: c.shortName })),
+    locations: locations.map((l) => ({ id: String(l.id), name: l.name })),
+    domains: domains.map((d) => ({ id: String(d.id), name: d.name })),
+    businesslines: businesslines.map((b) => ({ id: String(b.id), name: b.name })),
+    contractors: contractors.map((k) => ({ id: String(k.id), name: contractorLabel(k) })),
+    owners: owners.map((u) => ({ id: String(u.id), name: userLabel(u) })),
+  };
 }
 
 export default async function ProjektyPage({ searchParams }: { searchParams: SP }) {
-  const page = Math.max(1, Number(searchParams.page) || 1);
-  const pageSize = Math.min(500, Math.max(10, Number(searchParams.pageSize) || 15));
+  const page = Math.max(1, intParam(searchParams.page) ?? 1);
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(MIN_PAGE_SIZE, intParam(searchParams.pageSize) ?? DEFAULT_PAGE_SIZE),
+  );
   const where = buildWhere(searchParams);
 
   const [dicts, total, projects] = await Promise.all([
-    (async () => ({
-      documentTypes: await prisma.documentType.findMany({ orderBy: { sortOrder: "asc" } }),
-      statuses: await prisma.projectStatus.findMany({ orderBy: { sortOrder: "asc" } }),
-      companies: await prisma.company.findMany({ orderBy: { sortOrder: "asc" } }),
-      locations: await prisma.location.findMany({ orderBy: { sortOrder: "asc" } }),
-      domains: await prisma.domain.findMany({ orderBy: { sortOrder: "asc" } }),
-      businesslines: await prisma.businessline.findMany({ orderBy: { sortOrder: "asc" } }),
-      contractors: await prisma.contractor.findMany({ orderBy: { name: "asc" } }),
-      owners: (
-        await prisma.user.findMany({
-          where: { active: true },
-          orderBy: { fullName: "asc" },
-          select: { id: true, fullName: true },
-        })
-      ).map((u) => ({ id: u.id, name: u.fullName })),
-    }))(),
-    prisma.project.count({ where }),
-    prisma.project.findMany({
+    loadDictionaries(),
+    prisma.contract.count({ where }),
+    prisma.contract.findMany({
       where,
       include: {
         status: true,
-        owners: true,
-        contracts: { include: { contractors: true } },
+        contractor: true,
+        userAccess: {
+          where: { readOnly: false },
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, login: true } },
+          },
+        },
+        // "Opiniujący" — whoever was asked for an opinion in the FAU round.
+        opinions: {
+          where: { active: true },
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, login: true } },
+          },
+        },
+        // Legacy shows the most recent note in the list; the full thread is on the record.
+        remarkEntries: {
+          where: { active: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { body: true },
+        },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ registeredAt: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),
   ]);
 
-  const rows: ProjectRow[] = projects.map((p) => {
-    const primary = p.contracts[0];
+  const rows: ProjectRow[] = projects.map((c) => {
+    const reviewers = c.opinions
+      .map((o) => o.user)
+      .filter((u): u is NonNullable<typeof u> => u !== null)
+      .map(userLabel);
     return {
-      id: p.id,
-      identifier: p.identifier,
-      statusName: p.status?.name ?? null,
-      owners: p.owners.map((o) => o.fullName),
-      contractors: primary?.contractors.map((k) => k.name) ?? [],
-      subject: p.subject ?? primary?.subject ?? null,
-      lastNote: p.lastNote,
-      reviewer: p.reviewer,
-      sentToSign: p.sentToSign ? p.sentToSign.toISOString() : null,
+      id: c.id,
+      identifier: c.identifier ?? "—",
+      statusName: c.status?.name ?? null,
+      owners: c.userAccess.map((a) => userLabel(a.user)),
+      contractors: c.contractor ? [contractorLabel(c.contractor)] : [],
+      subject: c.description,
+      lastNote: c.remarkEntries[0]?.body ?? c.remarks,
+      reviewer: reviewers.length > 0 ? Array.from(new Set(reviewers)).join(", ") : null,
+      sentToSign: c.sentOn ? c.sentOn.toISOString() : null,
     };
   });
 
@@ -92,7 +191,10 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   const mkPageHref = (p: number) => {
-    const q = new URLSearchParams(searchParams as Record<string, string>);
+    const q = new URLSearchParams();
+    for (const [key, value] of Object.entries(searchParams)) {
+      if (typeof value === "string" && value !== "") q.set(key, value);
+    }
     q.set("page", String(p));
     return `/projekty?${q.toString()}`;
   };
@@ -114,8 +216,11 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
         <span>
           {total > 0 ? (
             <>
-              Pokazano <strong className="text-foreground">{from}–{to}</strong> z{" "}
-              <strong className="text-foreground">{total}</strong>
+              Pokazano{" "}
+              <strong className="text-foreground">
+                {from}–{to}
+              </strong>{" "}
+              z <strong className="text-foreground">{total}</strong>
             </>
           ) : (
             "Brak wyników"
@@ -124,7 +229,10 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
         {totalPages > 1 && (
           <div className="flex items-center gap-2">
             {page > 1 && (
-              <Link href={mkPageHref(page - 1)} className="rounded-md border px-3 py-1 transition hover:bg-muted">
+              <Link
+                href={mkPageHref(page - 1)}
+                className="rounded-md border px-3 py-1 transition hover:bg-muted"
+              >
                 ← Poprzednia
               </Link>
             )}
@@ -132,7 +240,10 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
               Strona {page} z {totalPages}
             </span>
             {page < totalPages && (
-              <Link href={mkPageHref(page + 1)} className="rounded-md border px-3 py-1 transition hover:bg-muted">
+              <Link
+                href={mkPageHref(page + 1)}
+                className="rounded-md border px-3 py-1 transition hover:bg-muted"
+              >
                 Następna →
               </Link>
             )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -53,7 +54,11 @@ export function Topbar() {
           AMDS CRU
         </div>
         <div className="flex items-center gap-4">
-          <LangSwitch />
+          {/* useSearchParams() forces a client bailout; without this boundary the
+              statically rendered routes fail to prerender. */}
+          <Suspense fallback={<div className="h-7 w-16" aria-hidden />}>
+            <LangSwitch />
+          </Suspense>
           {session?.user?.name && (
             <span className="hidden text-sm text-white/80 sm:inline">
               {session.user.name}

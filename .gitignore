@@ -47,3 +47,11 @@ Thumbs.db
 
 # === Docker volume danych (jeśli montowane lokalnie) ===
 pgdata/
+
+# === Zrzuty bazy legacy (dane produkcyjne, poufne) ===
+# Zrzut zawiera realne umowy, kontrahentow i kwoty. Nie trafia do gita:
+# historia gita jest praktycznie nieusuwalna, a security sign-off jest wciaz otwarty.
+# Zrzut trzymamy lokalnie / na dysku firmowym i przekazujemy poza repo.
+cru.sql
+cru.zip
+*.sql.gz

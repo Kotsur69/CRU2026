@@ -1,9 +1,17 @@
-// CRU2026 — model danych (metadane). Odwzorowanie legacy wg historia_wersji/audyt_legacy_strony.md.
-// ZASADA: baza trzyma WYŁĄCZNIE metadane. Pliki żyją poza bazą (StorageAdapter).
+// CRU2026 — data model for PostgreSQL, derived from the legacy AMDS CRU MySQL 5.1 schema (`cru.sql`).
+//
+// PRINCIPLES
+// 1. The database holds ONLY metadata. Files live outside it, behind StorageAdapter.
+// 2. Primary keys mirror the legacy integer ids 1:1 (contracts, contractors, attachments,
+//    dictionaries, users). This keeps the import idempotent and makes reconciliation against
+//    the still-running legacy system a plain id comparison during the parallel-run period.
+// 3. Columns whose legacy semantics are not yet confirmed are carried over rather than dropped,
+//    and marked "legacy, semantics unconfirmed". A migration must not silently lose data.
+// 4. Legacy user ids come from a directory we do not own (see User).
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../node_modules/@prisma/client"
+  output   = "../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -12,245 +20,628 @@ datasource db {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// UŻYTKOWNICY I ROLE (natywny login — bez SSO)
+// ENUMS — legacy magic numbers made explicit
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Legacy `contract_status.project` discriminator. One contract table serves three
+/// modules; the status decides which one a record belongs to.
+enum ContractStatusKind {
+  CONTRACT // legacy 0 — module "Umowy"
+  PROJECT // legacy 1 — module "Projekty" (FAU workflow)
+  RISK // legacy 2 — module "Dział ryzyka"
+}
+
+/// Legacy `contract_domain.type`.
+enum DomainKind {
+  GENERAL // legacy 0
+  RISK // legacy 2 — risk department domains
+}
+
+/// Dimensions a user's visibility can be restricted along.
+/// Mirrors the legacy `access` table, which `useraccess` rows point into.
+enum AccessDimension {
+  COMPANY // legacy access.id 1  -> contract_company
+  DOMAIN // legacy access.id 2  -> contract_domain
+  LOCATION // legacy access.id 3  -> contract_location
+  NATURE // legacy access.id 4  -> contract_nature
+  NOTICE_PERIOD // legacy access.id 5  -> contract_notice_period
+  DOCUMENT_TYPE // legacy access.id 6  -> contract_type
+  TRADE // legacy access.id 7  -> trade
+  CONNECTED_ENTITY // legacy access.id 8  -> companies_connected
+  PROJECT_MODULE // legacy access.id 9  -> project (grants the Projekty module)
+  BUSINESSLINE // legacy access.id 10 -> buissnesline
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// IDENTITY
+//
+// Legacy CRU has no user table of its own: `users` is a VIEW over a shared corporate
+// directory (`am_admin.users JOIN am_admin.users_systems WHERE system_id = 7`). That
+// database is NOT part of the CRU dump, so no logins, names or password hashes came with
+// the data — only integer user ids referenced from contracts, opinions and remarks.
+//
+// Therefore: we own identity from now on, `id` keeps the legacy directory id, and the
+// import creates placeholder rows for every referenced id. Placeholders are inactive and
+// have no password until the directory export arrives and enriches them.
 // ─────────────────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(cuid())
-  login        String   @unique
-  email        String?  @unique
-  fullName     String
-  passwordHash String
-  roleId       String
-  role         Role     @relation(fields: [roleId], references: [id])
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id            Int      @id // legacy am_admin user id — NOT auto-generated
+  login         String?  @unique
+  email         String?  @unique
+  firstName     String?
+  lastName      String?
+  passwordHash  String? // null for placeholders and directory-authenticated accounts
+  phone         String?
+  description   String?
+  active        Boolean  @default(true)
+  isAdmin       Boolean  @default(false) // legacy `admins` table
+  /// True when this row exists only because a legacy id was referenced somewhere.
+  isPlaceholder Boolean  @default(false)
+  loginCount    Int      @default(0)
+  createdAt     DateTime @default(now())
 
-  ownedContracts   Contract[] @relation("ContractOwners")
-  createdContracts Contract[] @relation("ContractCreatedBy")
-  updatedContracts Contract[] @relation("ContractModifiedBy")
-  ownedProjects    Project[]  @relation("ProjectOwners")
+  groups              UserGroup[]
+  groupHistory        UserGroupHistory[]
+  locations           UserLocation[]
+  accessScopes        UserAccessScope[]
+  ownedGroups         Group[]             @relation("GroupOwner")
+  contractAccess      ContractUser[]
+  registeredContracts Contract[]          @relation("ContractRegisteredBy")
+  modifiedContracts   Contract[]          @relation("ContractModifiedBy")
+  acceptedContracts   Contract[]          @relation("ContractAcceptedBy")
+  opinions            Opinion[]
+  remarks             Remark[]
+  historyEntries      ContractHistory[]
+  shoutboxEntries     ShoutboxRecipient[]
 
-  @@index([roleId])
+  @@index([active])
 }
 
-model Role {
-  id    String @id @default(cuid())
-  code  String @unique // np. admin, editor, viewer
-  name  String
-  users User[]
+/// Legacy `group` — functional roles: Dział prawny, Właściciele umów, Opiniujący,
+/// Dział ryzyka, Przełożeni, Dyrektor Klastra, Supplychain groups, …
+model Group {
+  id             Int           @id
+  name           String
+  active         Boolean       @default(true)
+  ownerId        Int?
+  owner          User?         @relation("GroupOwner", fields: [ownerId], references: [id])
+  businesslineId Int?
+  businessline   Businessline? @relation(fields: [businesslineId], references: [id])
+
+  members      UserGroup[]
+  history      UserGroupHistory[]
+  opinionTypes OpinionType[]
+
+  @@index([businesslineId])
+}
+
+model UserGroup {
+  userId  Int
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId Int
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@index([groupId])
+}
+
+/// Legacy `users_groups_history` — append-only record of past memberships.
+model UserGroupHistory {
+  id      Int   @id @default(autoincrement())
+  userId  Int
+  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId Int
+  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([groupId])
+}
+
+/// Legacy `users_locations` — restricts a user to given locations.
+model UserLocation {
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locationId Int
+  location   Location @relation(fields: [locationId], references: [id])
+
+  @@id([userId, locationId])
+  @@index([locationId])
+}
+
+/// Legacy `useraccess` — one row grants a user one value along one dimension.
+/// `valueId` is the id inside the dictionary named by `dimension`; it is intentionally
+/// not a foreign key, because the target table varies per dimension.
+model UserAccessScope {
+  id        Int             @id @default(autoincrement())
+  userId    Int
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dimension AccessDimension
+  valueId   Int
+
+  @@unique([userId, dimension, valueId])
+  @@index([userId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// SŁOWNIKI (w legacy edytowalne tabele; tu modele słownikowe)
+// DICTIONARIES — editable in the legacy admin panel, so tables, not enums
 // ─────────────────────────────────────────────────────────────────────────
 
+/// Legacy `contract_type`: Umowa, Umowa ramowa, Kontrakt, Aneks, Porozumienie,
+/// Przetarg, Zlecenie, List intencyjny. Type "Aneks" drives the /A01 identifier suffix.
 model DocumentType {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
+  id        Int     @id
+  name      String  @unique
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
   contracts Contract[]
 }
 
 model ContractStatus {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String // Obowiązująca / Zakończona
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
+  id        Int                @id
+  name      String
+  kind      ContractStatusKind @default(CONTRACT)
+  active    Boolean            @default(true)
+  sortOrder Int                @default(0)
+
   contracts Contract[]
+
+  @@index([kind])
 }
 
-model ProjectStatus {
-  id        String    @id @default(cuid())
-  code      String    @unique
-  name      String // cykl FAU: w toku / wysłane do podpisu / obieg FAU / zakończony ...
-  sortOrder Int       @default(0)
-  active    Boolean   @default(true)
-  projects  Project[]
-}
-
-model Businessline {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String // SSC / Dystrybucja
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
-  contracts Contract[]
-}
-
+/// Legacy `contract_company`: AMDSP, AMDP, AMC, HK POM, ST, SSC, …
 model Company {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String // AMC / AMDP / AMDSP / HK POM / SSC / ST
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
+  id        Int     @id
+  shortName String
+  fullName  String?
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
   contracts Contract[]
+}
+
+/// Legacy `buissnesline` (sic): SSC, DYSTRYBUCJA. Part of the identifier prefix.
+model Businessline {
+  id        Int     @id
+  name      String
+  shortName String? // "DYS", "SSC" — the segment used in identifiers
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  contracts Contract[]
+  groups    Group[]
 }
 
 model Location {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String // ~34 miasta
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
-  contracts Contract[]
+  id          Int     @id
+  name        String
+  description String?
+  active      Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  primaryForContracts Contract[]             @relation("ContractPrimaryLocation")
+  contractLinks       ContractLocationLink[]
+  userLinks           UserLocation[]
 }
 
+/// Legacy `contract_domain` — "Rodzaj umowy".
 model Domain {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String // Rodzaj umowy (~31 wartości)
-  sortOrder Int        @default(0)
+  id        Int        @id
+  name      String
+  kind      DomainKind @default(GENERAL)
   active    Boolean    @default(true)
+  sortOrder Int        @default(0)
+
+  contracts Contract[]
+
+  @@index([kind])
+}
+
+/// Legacy `contract_nature`: Kosztowa, Przychodowa, Bezkosztowa.
+model ContractNature {
+  id        Int     @id
+  name      String
+  active    Boolean @default(true)
+  sortOrder Int     @default(0)
+
   contracts Contract[]
 }
 
-model ContractNature {
-  id        String     @id @default(cuid())
-  code      String     @unique
-  name      String // Bezkosztowa / Kosztowa / Przychodowa
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
+/// Legacy `contract_notice_period`. `days` is used for sorting and for end-date maths;
+/// "(brak danych)" and "specyficzne" carry the sentinel 99999.
+model NoticePeriod {
+  id     Int     @id
+  name   String  @unique
+  days   Int?
+  active Boolean @default(true)
+
   contracts Contract[]
 }
 
 model Currency {
-  id        String     @id @default(cuid())
-  code      String     @unique // PLN / EUR / USD ...
-  name      String
-  sortOrder Int        @default(0)
-  active    Boolean    @default(true)
+  id       Int     @id
+  code     String  @unique // PLN, EUR, USD, "???"
+  priority Int     @default(0) // legacy `pri` — display order
+  active   Boolean @default(true)
+
+  contracts Contract[]
+}
+
+model DeliveryMethod {
+  id     Int     @id
+  name   String
+  active Boolean @default(true)
+
+  contracts Contract[]
+}
+
+/// Legacy `trade`: brak, export, import.
+model Trade {
+  id     Int     @id
+  name   String
+  active Boolean @default(true)
+
   contracts Contract[]
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// KONTRAHENCI
+// COUNTERPARTIES
 // ─────────────────────────────────────────────────────────────────────────
 
 model Contractor {
-  id        String     @id @default(cuid())
-  name      String
-  nip       String?
-  contracts Contract[] @relation("ContractContractors")
+  id                   Int       @id
+  shortName            String?
+  fullName             String?
+  address              String?
+  vatId                String? // legacy `vat_identification` (NIP)
+  register             String? // KRS / registry entry
+  cruIdentifier        String? // legacy `cru_identifier`
+  isCeidg              Boolean   @default(false)
+  isConnected          Boolean   @default(false) // legacy `companies_connected`
+  isDeleted            Boolean   @default(false)
+  registeredAt         DateTime?
+  registeredByLegacyId Int?
+  modifiedAt           DateTime?
+  modifiedByLegacyId   Int?
 
-  @@index([name])
+  contracts   Contract[]   @relation("ContractContractor")
+  debtorFor   Contract[]   @relation("ContractDebtor")
+  attachments Attachment[]
+
+  @@index([shortName])
+  @@index([fullName])
+  @@index([vatId])
+  @@index([isDeleted])
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// UMOWA — 34 pola wg /contract/preview/{id}
+// CONTRACT — the single table behind Umowy, Projekty and Dział ryzyka
+//
+// Identifier formats found in the data:
+//   2012/0001            contract, pre-2022
+//   2012/0001/A03        annex (document type "Aneks")
+//   2015/P0253           project
+//   AMDSP/DYS/2026/P0161 since 2022: {company}[/{businessline}]/{year}/[P]{number}
+//   AMC/2022/0004/A01    annex under the prefixed scheme
 // ─────────────────────────────────────────────────────────────────────────
 
 model Contract {
-  id                String   @id @default(cuid())
+  id         Int     @id
+  /// NOT unique: 111 identifiers repeat in the legacy data (e.g. 2012/0258 appears 4x).
+  identifier String?
 
-  // Identyfikacja
-  identifier        String   @unique // np. AMDSP/DYS/2026/0006
-  contractNumber    String? // Numer umowy
-  contractReference String? // z formularza wyszukiwania
+  // Annexes point at their parent contract.
+  parentId Int?
+  parent   Contract?  @relation("ContractAnnexes", fields: [parentId], references: [id])
+  annexes  Contract[] @relation("ContractAnnexes")
 
-  // Klasyfikacja (FK słownikowe)
-  documentTypeId    String?
-  documentType      DocumentType?   @relation(fields: [documentTypeId], references: [id])
-  statusId          String?
-  status            ContractStatus? @relation(fields: [statusId], references: [id])
-  businesslineId    String?
-  businessline      Businessline?   @relation(fields: [businesslineId], references: [id])
-  companyId         String?
-  company           Company?        @relation(fields: [companyId], references: [id])
-  locationId        String?
-  location          Location?       @relation(fields: [locationId], references: [id])
-  domainId          String? // Rodzaj umowy
-  domain            Domain?         @relation(fields: [domainId], references: [id])
-  natureId          String? // Charakter umowy
-  nature            ContractNature? @relation(fields: [natureId], references: [id])
-  currencyId        String?
-  currency          Currency?       @relation(fields: [currencyId], references: [id])
+  contractReference String? // "Numer umowy" — the counterparty's own number
+  description       String? // "Przedmiot umowy"
+  remarks           String?
 
-  // Treść / warunki
-  subject           String? // Przedmiot umowy
-  dateStart         DateTime? // Data zawarcia
-  dateEnd           DateTime? // Data zakończenia
-  noticePeriod      String? // Okres wypowiedzenia
-  amount            Decimal?  @db.Decimal(18, 2) // Wynagrodzenie
-  otherAmountDesc   String? // Inne określenie wynagrodzenia
-  paymentTerm       String? // Termin płatności
-  deliveryForm      String? // Forma doręczenia
-  exportImport      String? // Eksport/Import
+  // Classification
+  documentTypeId Int?
+  documentType   DocumentType?   @relation(fields: [documentTypeId], references: [id])
+  statusId       Int?
+  status         ContractStatus? @relation(fields: [statusId], references: [id])
+  companyId      Int?
+  company        Company?        @relation(fields: [companyId], references: [id])
+  businesslineId Int?
+  businessline   Businessline?   @relation(fields: [businesslineId], references: [id])
+  domainId       Int?
+  domain         Domain?         @relation(fields: [domainId], references: [id])
+  natureId       Int?
+  nature         ContractNature? @relation(fields: [natureId], references: [id])
+  tradeId        Int?
+  trade          Trade?          @relation(fields: [tradeId], references: [id])
 
-  // Flagi (checkboxy legacy)
-  weksel            Boolean  @default(false)
-  companyConnected  Boolean  @default(false) // Podmiot powiązane
-  formularz         Boolean  @default(false)
-  obsc              Boolean  @default(false)
+  // Counterparties
+  contractorId Int?
+  contractor   Contractor? @relation("ContractContractor", fields: [contractorId], references: [id])
+  /// Risk module: the debtor. Legacy `debtor_id` had no foreign key.
+  debtorId     Int?
+  debtor       Contractor? @relation("ContractDebtor", fields: [debtorId], references: [id])
 
-  remarks           String? // Uwagi
+  // Locations — legacy keeps a single primary FK AND a many-to-many table (21 666 rows),
+  // so both are preserved.
+  primaryLocationId Int?
+  primaryLocation   Location?              @relation("ContractPrimaryLocation", fields: [primaryLocationId], references: [id])
+  locations         ContractLocationLink[]
 
-  // Relacje
-  ownerIds          User[]        @relation("ContractOwners") // Właściciel umowy (multiple)
-  contractors       Contractor[]  @relation("ContractContractors")
-  projectId         String?
-  project           Project?      @relation(fields: [projectId], references: [id])
-  attachments       Attachment[]
+  // Dates
+  dateBegin DateTime? @db.Date // "Data zawarcia"
+  dateEnd   DateTime? @db.Date // "Data zakończenia"
+  sentOn    DateTime? @db.Date // legacy `date_send`
 
-  // Aneksy (self-relation: aneks -> umowa nadrzędna)
-  parentId          String?
-  parent            Contract?  @relation("ContractAnnexes", fields: [parentId], references: [id])
-  annexes           Contract[] @relation("ContractAnnexes")
+  // Money
+  salary              Decimal?  @db.Decimal(14, 2)
+  currencyId          Int?
+  currency            Currency? @relation(fields: [currencyId], references: [id])
+  specificSalaryTerms String? // free text used when `salary` cannot express it ("cennik")
+  paymentTerm         String? // legacy `date_payment` — free text, not a date
 
-  // Audyt
-  createdAt         DateTime  @default(now()) // Data rejestracji
-  createdById       String? // Zarejestrowano przez
-  createdBy         User?     @relation("ContractCreatedBy", fields: [createdById], references: [id])
-  modifiedAt        DateTime  @updatedAt // Data modyfikacji
-  modifiedById      String? // Modyfikowano przez
-  modifiedBy        User?     @relation("ContractModifiedBy", fields: [modifiedById], references: [id])
+  noticePeriodId   Int?
+  noticePeriod     NoticePeriod?   @relation(fields: [noticePeriodId], references: [id])
+  deliveryMethodId Int?
+  deliveryMethod   DeliveryMethod? @relation(fields: [deliveryMethodId], references: [id])
+
+  // Flags
+  companiesConnected Boolean  @default(false) // "Podmioty powiązane"
+  insuranceGuarantee Boolean  @default(false)
+  obsc               Boolean  @default(false)
+  obscDescription    String?
+  opinionsRequested  Boolean  @default(false) // legacy `giveopinions` — opens the opinion round
+  isEditable         Boolean  @default(true) // legacy `edittable`
+  isProject          Boolean  @default(false) // legacy `project`; must agree with status.kind
+  isDeleted          Boolean  @default(false) // legacy soft delete
+  /// Legacy `temp_form`: 1 = yes, 0 = no, -1 = unspecified -> null.
+  tempForm           Boolean?
+  /// Legacy `bill` — semantics unconfirmed, carried for fidelity.
+  bill               Boolean  @default(false)
+
+  /// Legacy `sps_id` / `sps_last_version` — reference into an external system,
+  /// semantics unconfirmed, carried for fidelity.
+  spsId          Int?
+  spsLastVersion Int?
+
+  // Acceptance (legacy `accept` / `acceptuser` / `acceptdate`)
+  isAccepted   Boolean?
+  acceptedById Int?
+  acceptedBy   User?     @relation("ContractAcceptedBy", fields: [acceptedById], references: [id])
+  acceptedAt   DateTime?
+
+  // Audit
+  registeredAt   DateTime  @default(now())
+  registeredById Int?
+  registeredBy   User?     @relation("ContractRegisteredBy", fields: [registeredById], references: [id])
+  modifiedAt     DateTime?
+  modifiedById   Int?
+  modifiedBy     User?     @relation("ContractModifiedBy", fields: [modifiedById], references: [id])
+  /// Legacy `oldregistered_on` — registration date carried over from the pre-CRU system.
+  legacyRegisteredAt DateTime?
+
+  // Children
+  userAccess      ContractUser[]
+  attachments     Attachment[]
+  opinions        Opinion[]
+  acceptanceForm  AcceptanceForm?
+  remarkEntries   Remark[]
+  history         ContractHistory[]
+  shoutboxEntries Shoutbox[]
 
   @@index([statusId])
   @@index([companyId])
   @@index([documentTypeId])
-  @@index([dateEnd])
+  @@index([contractorId])
+  @@index([domainId])
+  @@index([businesslineId])
   @@index([parentId])
-  @@index([projectId])
+  @@index([dateEnd])
+  @@index([isDeleted])
+  @@index([opinionsRequested])
+  @@index([identifier])
+}
+
+/// Legacy `contract_has_location` — a contract may apply in several locations.
+model ContractLocationLink {
+  contractId Int
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  locationId Int
+  location   Location @relation(fields: [locationId], references: [id])
+
+  @@id([contractId, locationId])
+  @@index([locationId])
+}
+
+/// Legacy `contract_users` — who may see a contract, and whether read-only.
+/// This is both the "Właściciel umowy" relation and the row-level ACL.
+model ContractUser {
+  id         Int      @id @default(autoincrement())
+  contractId Int
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readOnly   Boolean  @default(false) // legacy `onlyRead`
+
+  @@unique([contractId, userId])
+  @@index([userId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// PROJEKT (szkielet — workflow FAU)
-// ─────────────────────────────────────────────────────────────────────────
-
-model Project {
-  id          String         @id @default(cuid())
-  identifier  String         @unique
-  subject     String?
-  statusId    String?
-  status      ProjectStatus? @relation(fields: [statusId], references: [id])
-  owners      User[]         @relation("ProjectOwners")
-  lastNote    String? // Ostatnia notatka
-  reviewer    String? // Opiniujący
-  sentToSign  DateTime? // Wysłane do podpisu
-  contracts   Contract[]
-  createdAt   DateTime       @default(now())
-  modifiedAt  DateTime       @updatedAt
-
-  @@index([statusId])
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// ZAŁĄCZNIK — referencja przez StorageAdapter (NIE ścieżka fizyczna w bazie)
+// ATTACHMENTS — metadata only; bytes live behind StorageAdapter
+//
+// Legacy `attachment.path` is a flat, hash-named relative path such as
+// `attachments/2f6c63704c08a502d76526e79f65e032.pdf`, which becomes the storage key.
 // ─────────────────────────────────────────────────────────────────────────
 
 model Attachment {
-  id         String   @id @default(cuid())
-  contractId String
-  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  filename   String
-  storageKey String // klucz w StorageAdapter (opaque)
-  mimeType   String?
-  sizeBytes  Int?
-  isFinal    Boolean  @default(false) // "wersja ostateczna"
-  addedAt    DateTime @default(now())
+  id         Int     @id
+  name       String? // display name
+  storageKey String? // legacy `path`
+  fileType   String? // pdf, msg, …
+  version    Int?
+  isFinal    Boolean @default(false) // legacy `finally` — "Wersja ostateczna"
+  /// Legacy `formsession` — groups files uploaded in one unsaved form session.
+  formSession String?
+
+  contractId   Int?
+  contract     Contract?   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contractorId Int?
+  contractor   Contractor? @relation(fields: [contractorId], references: [id])
+
+  addedAt DateTime @default(now())
 
   @@index([contractId])
+  @@index([contractorId])
+  @@index([isFinal])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// OPINION / FAU WORKFLOW
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Legacy `opiniontypes` — the roles asked for an opinion, each tied to a group.
+model OpinionType {
+  id      Int    @id
+  name    String
+  groupId Int?
+  group   Group? @relation(fields: [groupId], references: [id])
+
+  opinions Opinion[]
+}
+
+model Opinion {
+  id            Int          @id
+  contractId    Int
+  contract      Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  opinionTypeId Int?
+  opinionType   OpinionType? @relation(fields: [opinionTypeId], references: [id])
+  userId        Int?
+  user          User?        @relation(fields: [userId], references: [id])
+
+  description String
+  signed      Boolean   @default(false) // legacy `signature`
+  signedAt    DateTime?
+  active      Boolean   @default(true)
+
+  /// Legacy flags on the opinion round.
+  noMdr           Boolean @default(false) // `nomdr`
+  formVerified    Boolean @default(false) // `form_ver`
+  sendVerified    Boolean @default(false) // `send_ver`
+  sendInfo        Boolean @default(false) // `sendinfo`
+  mailingDisabled Boolean @default(false) // `disableMailing`
+
+  @@index([contractId])
+  @@index([opinionTypeId])
+  @@index([userId])
+}
+
+/// Legacy `acceptance_form` — the MDR procedure checklist.
+model AcceptanceForm {
+  id                  Int       @id
+  contractId          Int       @unique
+  contract            Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  mdrProcedure        Boolean   @default(false)
+  initialVerification Boolean   @default(false)
+  formSent            Boolean   @default(false)
+  ownerAccepted       Boolean   @default(false)
+  ownerAcceptedAt     DateTime?
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// NOTES AND IN-APP NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────
+
+model Remark {
+  id         Int       @id
+  contractId Int?
+  contract   Contract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  userId     Int?
+  user       User?     @relation(fields: [userId], references: [id])
+  body       String?
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+
+  shoutboxEntries Shoutbox[]
+
+  @@index([contractId])
+  @@index([userId])
+}
+
+/// Legacy `message` — notification templates ("nowa notatka").
+model MessageTemplate {
+  id   Int    @id
+  name String
+
+  shoutboxEntries Shoutbox[]
+}
+
+/// Legacy `shoutbox` — one notification event, fanned out to recipients.
+model Shoutbox {
+  id         Int              @id
+  messageId  Int?
+  message    MessageTemplate? @relation(fields: [messageId], references: [id])
+  contractId Int?
+  contract   Contract?        @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  remarkId   Int?
+  remark     Remark?          @relation(fields: [remarkId], references: [id], onDelete: Cascade)
+
+  recipients ShoutboxRecipient[]
+
+  @@index([contractId])
+}
+
+/// Legacy `shoutboxusers`.
+model ShoutboxRecipient {
+  id         Int      @id
+  shoutboxId Int
+  shoutbox   Shoutbox @relation(fields: [shoutboxId], references: [id], onDelete: Cascade)
+  userId     Int?
+  user       User?    @relation(fields: [userId], references: [id])
+  isRead     Boolean  @default(false) // legacy `readed`
+
+  @@index([userId, isRead])
+  @@index([shoutboxId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// AUDIT TRAIL — legacy `contracthistory`, 231 022 rows: one row per changed column
+// ─────────────────────────────────────────────────────────────────────────
+
+model ContractHistory {
+  id         Int       @id
+  contractId Int?
+  contract   Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  columnName String?
+  oldValue   String?
+  newValue   String?
+  userId     Int?
+  user       User?     @relation(fields: [userId], references: [id])
+  createdAt  DateTime  @default(now())
+
+  @@index([contractId, createdAt])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// MAILING
+// ─────────────────────────────────────────────────────────────────────────
+
+model MailingGroup {
+  id   Int    @id
+  name String
+
+  contacts MailingContact[]
+}
+
+model MailingContact {
+  id             Int           @id
+  firstName      String?
+  lastName       String?
+  email          String?
+  mailingGroupId Int?
+  mailingGroup   MailingGroup? @relation(fields: [mailingGroupId], references: [id])
+
+  @@index([mailingGroupId])
 }

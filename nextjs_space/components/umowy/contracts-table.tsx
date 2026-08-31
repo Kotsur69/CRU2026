@@ -13,7 +13,7 @@ import { ColumnChooserPanel, useColumnVisibility } from "./column-chooser";
 // Wiersz umowy zserializowany po stronie serwera (Decimal/Date -> string, żeby bezpiecznie
 // przejść granicę Server -> Client Component).
 export interface ContractRow {
-  id: string;
+  id: number;
   identifier: string;
   documentType: string | null;
   contractNumber: string | null;
