@@ -78,7 +78,8 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
   - `lib/storage/local-adapter.ts` — fallback po stemie md5 (7 plików wyżej) + **prawdziwe typy MIME**. Wcześniej `stat()` nie ustawiał `mimeType`, więc każdy załącznik szedł jako `application/octet-stream` i PDF nie otwierał się w przeglądarce. Nazwa i typ brane są z **klucza z bazy**, nie ze zmanglowanej nazwy pliku — inaczej te 7 PDF-ów nadal by się nie podglądało. Klucze `list()` znormalizowane do `/` (na Windows `path.join` dawał `\`).
   - `scripts/legacy/verify-attachments.ts` + `yarn db:verify-files` — powtarzalna rekoncyliacja (realizacja zasady 4 z `plan.md`); rozdziela EXACT / rozszerzenie / BRAK / sieroty, kod wyjścia 1 przy brakujących plikach, więc nadaje się na bramkę przed cutoverem.
   - Smoke test przez adapter: trafienie 1:1, wszystkie 3 warianty zmanglowane, plik brakujący (→ 404) i próba path traversal (→ wyjątek). `npx tsc --noEmit` czysty.
-- **Storage wskazuje na eksport w miejscu, bez kopiowania:** `STORAGE_LOCAL_ROOT="C:/Users/mmazur/Downloads/CRU260811/CRU260811"`. ⚠️ Na dysku C: zostało **71 GB wolnego**, więc kopia 49 GB jest niewykonalna bez porządków. **Do zrobienia:** przenieść eksport z `Downloads` (katalog ulotny) w stabilną lokalizację i zaktualizować `.env`.
+- **Pliki załączników przeniesione do repo (poza gita):** eksport początkowo czytany był w miejscu z `Downloads`, ale to katalog ulotny i jedyna kopia 39 280 dokumentów — ryzyko przypadkowego usunięcia. Katalog `attachments/` przeniesiony do `nextjs_space/storage-local/attachments/`. Przenosiny to **rename w obrębie tego samego wolumenu C: — 0,0 s, bez zapotrzebowania na dodatkowe miejsce** (kopia 49 GB przy 71 GB wolnego byłaby na granicy). `STORAGE_LOCAL_ROOT` wrócił do relatywnego `"./storage-local"`, a ten katalog jest w `.gitignore`, więc 49 GB nie ma jak wejść do repo. Weryfikacja po przenosinach: identyczne liczby (39 263/39 271, 8 braków, 17 sierot).
+- **Sprzątanie:** `cru.zip` usunięty — zawierał wyłącznie `cru.sql`, potwierdzone identycznym md5 (`0d15ea0e…`), więc był czystą duplikacją. `cru.sql` zostaje na dysku w katalogu repo (wykluczony z gita jako dane produkcyjne). Pusty szkielet katalogu `Downloads/CRU260811` usunięty.
 - **Raport wersji 0.2 napisany** (`historia_wersji/Historia wersji/CRU2026_Raport_Wersji_0.2.docx`), w konwencji raportów AMSteel_Quote: metryka, kumulująca się historia wersji, zmiany w podziale na obszary, znane problemy, plany. Obszary dostosowane do kierunku z 31.08 — „Kalendarz gwarancji i przypomnienia” → **Migracja danych ze starego systemu**, „Integracja SharePoint” → **Dokumenty i załączniki**; z opisu obszaru logowania usunięto nieaktualne Entra ID SSO. Formatowanie zachowane przez klonowanie wierszy na poziomie XML (`add_row` gubi styl). Numeracja: raport `1.0` wycofany jako przedwczesny, obowiązują `0.1` i `0.2`.
 
 ### 2026-07-31
@@ -141,7 +142,6 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 ### Do rozstrzygnięcia
 - [ ] Gdzie stoi produkcja: wewnętrzny serwer w Katowicach czy serwer bytomski
 - [ ] **8 załączników bez pliku w eksporcie** — dopytać administratorów serwera bytomskiego; pełna lista z ID umów: `yarn db:verify-files`
-- [ ] **Przenieść eksport plików z `Downloads` w stabilną lokalizację** (49 GB, wolne na C: 71 GB) i zaktualizować `STORAGE_LOCAL_ROOT` w `.env`
 - [ ] Model „ważnych osób" podpisujących: stały preset czy definiowany per-umowa (wpływa na UI Fazy 4)
 - [ ] Docelowe miejsce przechowywania plików (serwer bytomski vs. SharePoint vs. AWS) — czeka na rozstrzygnięcie firmowych rozmów z AWS; `StorageAdapter` izoluje tę decyzję od schematu
 - [ ] Semantyka kolumn `bill`, `sps_id`, `sps_last_version` — przeniesione ze zrzutu „na wszelki wypadek", do potwierdzenia z użytkownikami
@@ -155,6 +155,7 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 - [x] **Schemat modułu `/project`** — nie ma osobnego modelu: Projekty to `contract` ze statusem o `project = 1` (2026-08-31)
 - [x] **Zakres ośmiu nieaudytowanych modułów** — znany ze schematu, wszystkie mają odpowiedniki w `schema.prisma`; Faza 6 jest wyceniana (2026-08-31)
 - [x] **Dostęp do katalogu PDF w Bytomiu** — dostarczony 2026-08-31 jako eksport `CRU260811` (39 280 plików, 49 GB). Pokrycie 99,98 % rekordów `Attachment`; weryfikacja: `yarn db:verify-files`
+- [x] **Lokalizacja plików załączników** — 49 GB przeniesione z `Downloads` do `nextjs_space/storage-local/attachments/` (2026-08-31). Katalog jest w `.gitignore`, więc pliki nigdy nie trafią do repo; `STORAGE_LOCAL_ROOT="./storage-local"` (ścieżka relatywna, przenośna między maszynami). Weryfikacja po przenosinach: te same liczby, 39 263/39 271
 - [x] **PostgreSQL do developmentu bez uprawnień administratora** — przenośne binaria EDB 16.9 w `~/pgsql`, klaster w `~/pgsql/data`, baza `cru2026` na `localhost:5432` (2026-08-31)
 
 ### Nieaktualne po pivocie (zapis historyczny)
