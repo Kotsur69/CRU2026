@@ -9,9 +9,8 @@ without going back to `cru.sql` or the legacy audit to re-derive anything.
   below. Files are never renamed. `grep -rl "status: done" docs/features/` lists
   finished work.
 - **Template:** [`00-TEMPLATE.md`](00-TEMPLATE.md). Copy it; keep the section order.
-- **Written so far:** 01–19. A link below that does not
-  resolve is a spec not yet written. `status:` tracks *implementation*, not whether
-  the document exists.
+- **All 34 are written.** `status:` tracks *implementation*, not whether the
+  document exists — every spec below is still `todo` as code.
 
 Strategy lives elsewhere and is not replaced by these documents:
 [`../../plan.md`](../../plan.md) (direction and architecture),
@@ -206,6 +205,56 @@ to answer. Kept in sync as specs are written.
 | Q17 | Where does "zadaj pytanie" send the question in legacy — e-mail or an internal thread? | 14 |
 | Q29 | Should `Attachment.isFinal` become `Boolean?` Legacy has 16,602 ones, 22,670 nulls and **zero** explicit zeroes, so nothing is lost by treating null as false as long as the UI only shows the positive. Proposal: leave it. | 18 |
 | Q33 | Should an expiring contract notify anyone? Legacy never did. 41 contracts fall inside a 90-day window today, and the data supports it (`dateEnd` + `NoticePeriod`). Needs SMTP, which does not exist anywhere in the codebase. | 19, 29 |
+
+### Remaining questions, by spec
+
+Everything not already listed above. Each is stated in full in its own spec's
+"Open questions" section; this is the index.
+
+| # | Question | Spec |
+|---|---|---|
+| Q57 | May any signed-in user create a counterparty? Today yes, with no check at all | 20 |
+| Q58 | **Merge the 177 duplicate-NIP groups?** Reassigns contracts — needs legal sign-off | 20 |
+| Q59 | Is REGON/GUS lookup wanted, and when? It is the only *preventive* fix for Q58 | 20, 30 |
+| Q60 | Is "Tylko do odczytu" (group 5) an enforced role? If so spec 03's model is incomplete | 21 |
+| Q61 | What are groups 12 and 13 for? The only two with an owner **and** a businessline | 21, 26 |
+| Q62 | Should group creation and deletion be possible at all? | 21 |
+| Q63 | **`UserLocation` or `UserAccessScope(LOCATION)`?** Two tables, same purpose. Blocks spec 03's final shape | 22, 03 |
+| Q64 | Should `(brak danych)` (8,161 records) be migrated to null? Recommend no | 22 |
+| Q65 | Are the nine locations with under 20 records still open sites? | 22 |
+| Q66 | Who administers access after cutover? Ten of eleven admins are placeholders | 23 |
+| Q67 | **May the mailing list be used as a directory source?** 269 real addresses against 451 placeholders | 25, 04 |
+| Q68 | Is a mailing feature wanted at all? Legacy has one group named `test` | 25 |
+| Q69 | What happened to the 328 deleted mailing contacts? | 25 |
+| Q70 | **What do the legacy reports actually contain?** Governs spec 28's export design | 24, 28 |
+| Q71 | Is a bulk export the real requirement rather than a dashboard? | 24 |
+| Q72 | Should report figures respect the viewer's access scope? We say yes, and label it | 24 |
+| Q73 | **Does the legacy server host more than the `cru` database?** Cheapest question that could resolve Supply chain | 26 |
+| Q74 | Is Supply chain in scope at all? It has never appeared in a requirement | 26 |
+| Q75 | Docker or a plain Node service? | 31 |
+| Q76 | Who operates the system after handover? | 31 |
+| Q77 | Is there a staging environment? Spec 34's parallel run assumes one | 31, 34 |
+| Q78 | Does an institutional backup at Bytom already cover the 49 GB? | 32 |
+| Q79 | What recovery point and recovery time are acceptable? | 32 |
+| Q80 | Should `StorageAdapter.put()` deduplicate? Recommend no — shared-key delete hazard | 32 |
+| Q81 | Is a CI runner available? | 33 |
+| Q82 | Is the 80% coverage rule binding? Spec 33 proposes six targeted modules instead | 33 |
+| Q83 | What does E2E run against? Depends on Q77 | 33 |
+| Q84 | **Is step 0b's acceptance still required, and is this spec set it?** The master prompt gated all production code on it; neither happened | 34 |
+| Q85 | When is cutover? Depends on Q1 and Q4 | 34 |
+| Q86 | Who signs off — legal for the data, Mati for the scope, someone for operations | 34 |
+| Q87 | How long does legacy stay up? Recommend three months read-only | 34 |
+| Q88 | **The dump is from 2026-08-10.** Everything entered since is missing; a fresh export is needed at cutover | 34 |
+| Q89 | Who may send a contract for signature? Heavier than editing a field | 27 |
+| Q90 | Should a completed signature set the contract to "Obowiązująca" automatically? | 27 |
+| Q91 | `xlsx` or `exceljs`? The first new runtime dependency in the project | 28 |
+| Q92 | Should bulk exports be logged to `AccessAudit`? | 28 |
+| Q93 | SMTP — host, credentials, sender, and whether the relay will accept our mail | 29 |
+| Q94 | How does a `NoticePeriod` become a number of days? Some values are free text | 29 |
+| Q95 | Should deadline reminders also cover projects? | 29 |
+| Q96 | How many of the 177 duplicate NIPs are mistyped rather than merely duplicated? | 30 |
+| Q97 | Does the company already hold a GUS BIR1 key? | 30 |
+| Q98 | Should the existing 3,052 counterparties be enriched from GUS? Only after Q58 | 30 |
 
 ### Deliberate exclusions, confirmed
 

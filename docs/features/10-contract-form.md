@@ -4,7 +4,7 @@ title: Formularz rekordu (contract form)
 group: B-registers
 status: todo
 depends-on: [01, 02]
-legacy-tables: [contract, contract_users]
+legacy-tables: [contract, contract_users, contract_domain, currency, delivery_method, trade, contract_nature, contract_notice_period, contract_type, contract_company, contract_status, buissnesline]
 prisma-models: [Contract, ContractUser, Contractor, Currency, NoticePeriod, DeliveryMethod, Trade]
 routes: ["/umowy/nowy", "/umowy/[id]/edytuj", "/projekty/nowy", "/ryzyko/nowy"]
 ---
