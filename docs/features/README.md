@@ -9,7 +9,7 @@ without going back to `cru.sql` or the legacy audit to re-derive anything.
   below. Files are never renamed. `grep -rl "status: done" docs/features/` lists
   finished work.
 - **Template:** [`00-TEMPLATE.md`](00-TEMPLATE.md). Copy it; keep the section order.
-- **Written so far:** 01–08 and 13–19. A link below that does not
+- **Written so far:** 01–19. A link below that does not
   resolve is a spec not yet written. `status:` tracks *implementation*, not whether
   the document exists.
 
@@ -160,14 +160,26 @@ to answer. Kept in sync as specs are written.
 | Q23 | **Is `acceptance_form` genuinely dead?** Two rows ever inserted, one surviving, April 2020, replaced within the month by flags on the owner's opinion. Proposal is to freeze the screen read-only. If the legal department wants the four-step checklist revived, that is a new build. | 17 |
 | Q24 | Should the MDR declaration become **mandatory** on the contract owner's answer? Today 485 owner opinions cannot distinguish "MDR applies" from "nobody looked". Making it required changes the form for 343 contract owners. | 17 |
 | Q31 | **May we close the 173-contract auto-close backlog?** 32 expired before the legacy job existed, 141 were missed by it; three have been reported as in force since 2015. A reviewed, one-off bulk change to legal records. | 19 |
+| Q48 | **May `2099-12-31` be shown as "na czas nieokreślony"?** It is legacy's sentinel for an open-ended contract — 7,442 occurrences in the dump, **4,119 live records**, 1,638 of them still in force. Today they display "31.12.2099". Recommend yes. | 10, 19 |
+| Q54 | **Is `contract_has_location` *additional* locations or the complete set?** 7,944 records have a single link that is not their primary; 11,824 have one that is. Decides the form, the label, and whether the primary field survives. One legacy user answers it in ten seconds. | 12, 03 |
 
 ### Semantics to confirm with a legacy user
 
 | # | Question | Spec |
 |---|---|---|
-| Q8 | `contract.bill` — 544 records set, 472 audited toggles, so it is a live checkbox. Meaning unconfirmed ("faktura"? "rozliczane fakturą"?). | 10 |
+| ~~Q8~~ | ~~`contract.bill` — meaning unconfirmed.~~ **Answered by spec 09.** It is **"Weksel"** — a bill of exchange. The legacy preview shows exactly four booleans and the table has exactly four columns for them; by elimination `bill` ↔ Weksel, and the English *bill of exchange* is precisely *weksel*. Confirm with Q45. | 09, 10 |
+| Q45 | Confirm `bill` = "Weksel" and `temp_form` = "Formularz" on a live legacy record. One preview of a record with `bill = 1` settles both, and the same screenshot answers what the "Formularz" flag is *for*. **Supersedes Q8, narrows Q10.** | 09 |
+| Q49 | Four records carry money in currency **`???`** (id 1, 558 records, 554 of them with no amount). Which currency are those four? | 10 |
+| Q50 | Is **5 000 000 000 EUR** real? It sits on `AMDSP/DYS/2023/0035`, its annex and three of its projects — entered deliberately, and it dominates any sum over the register. | 10 |
+| Q51 | Should a new annex inherit its parent's dates and amount? We leave them empty, since an amendment exists to change them. | 11 |
+| Q52 | **What happens to a contract's end date when an annex extends it?** Nothing links them, so a contract can read "expires 2024" while its `/A03` runs to 2027. 3,038 annexes — a real hazard for any report on end dates. | 11 |
+| Q53 | Annex numbering per parent or per year? Per parent, on the evidence (1,400 contracts have exactly `/A01`). | 11 |
+| Q55 | Should the 11,824 links that merely duplicate the primary location be removed? Recommend no — tolerate both forms on read. | 12 |
+| Q56 | Should the register's location column show the whole set? 291 records have more than one; legacy shows one. | 12 |
 | Q9 | `contract.OBSC` / `descOBSC` — 499 records, an ArcelorMittal internal acronym. What compliance check is it? | 10 |
-| Q10 | `contract.temp_form` — 9,113 set, 10,948 audited changes. "Umowa tymczasowa"? | 10 |
+| Q10 | `contract.temp_form` — **label answered by spec 09: it is "Formularz"**. What the flag is *for*, on 8,968 records, is still unknown. | 09, 10 |
+| Q46 | Should the record preview stay a full page, or become a 1000×600 popup as legacy does? | 09 |
+| Q47 | We keep legacy's field order *inside* our sections, so the overall top-to-bottom order differs. If anyone reads the preview as a checklist, they should see the grouping before cutover. | 09 |
 | Q11 | The 39 records with `project = 3`, no status, businessline 9 (which does not exist) and the only four `accept = 1` values. An abandoned 2021 experiment, all soft-deleted. Keep, purge or migrate? | 01 |
 | Q12 | Access dimensions 6 (document type), 7 (trade) and 8 (related entity) have **zero** grants in the data. Build them at all? | 03, 23 |
 | Q13 | `identifier2` on the Projekty search form. **Spec 07 has a hypothesis:** it matches the *resulting contract's* identifier — 7,013 projects have a differently-numbered contract as their parent, and nothing else explains a second identifier box on this register alone. One search by a legacy user confirms or denies it. | 07 |

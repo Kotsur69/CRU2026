@@ -157,7 +157,16 @@ eleven years.
 | Total | **2,223** |
 | `dateEnd` in the future | 1,991 |
 | `dateEnd` in the past | 187 |
-| `dateEnd` null — open-ended | **45** |
+| `dateEnd` null — open-ended | 45 |
+| **`dateEnd` = `2099-12-31` — also open-ended** | **1,638** |
+
+**Correction, from spec 10.** Legacy writes `2099-12-31` for "na czas
+nieokreślony" — 4,119 records across the register, 1,638 of them still
+"Obowiązująca". So the open-ended set in force is **1,683**, not 45, and 1,638 of
+the "1,991 with a future end date" above are not really dated at all. Every
+predicate in this spec must use `isIndefinite()` (spec 10) rather than testing for
+null, or those 1,638 contracts sit in the expiry list for the next 73 years and
+then all close at once.
 
 Expiry horizon for the 1,991 that are genuinely current:
 
@@ -235,16 +244,19 @@ legitimate.
   other list. The **job** itself runs unscoped, because it is not a user.
 - **Sign-off:** not needed.
 
-### Quirk: 45 contracts in force have no end date
+### Quirk: 1,683 contracts in force have no real end date, and only 45 look that way
 
-- **Data:** `statusId = 2`, `dateEnd IS NULL`.
-- **Why it matters:** the job cannot touch them, by construction, and they will stay
-  "Obowiązująca" indefinitely. That is probably correct — an open-ended contract is a
-  real thing, and the detail page already renders "na czas nieokreślony"
-  (`acceptance-form-page.tsx:70`).
-- **We do:** nothing automatic. List them on `/wygasajace` under a separate heading
-  **"Bez daty końca (45)"** so they are visible rather than invisible, and leave them
-  alone.
+- **Data:** `statusId = 2` with `dateEnd IS NULL` — 45; with `dateEnd =
+  2099-12-31`, legacy's "na czas nieokreślony" sentinel (spec 10) — **1,638**.
+- **Why it matters:** the 45 nulls the job cannot touch by construction, and that is
+  correct — an open-ended contract is a real thing. The 1,638 are the danger: a
+  predicate written as `dateEnd < current_date` treats them as dated, so they sit in
+  the expiry horizon for 73 years and then all close together in January 2100. Worse,
+  `endUrgency()` currently reports "za 26 800 dni" on each of them.
+- **We do:** nothing automatic, and **every predicate in this spec uses
+  `isIndefinite(dateEnd)`** (spec 10) rather than a null test — the job's selection,
+  the four `/wygasajace` groups and the horizon filter. List them under
+  **"Bez daty końca (1 683)"** so they are visible rather than invisible.
 - **Sign-off:** not needed.
 
 ### Quirk: only "Obowiązująca" is ever auto-closed
@@ -274,7 +286,7 @@ count:
 | **Po terminie** | `dateEnd < current_date` | 187 |
 | **Wygasa w ciągu 30 dni** | `dateEnd` within 30 days | 13 |
 | **Wygasa w ciągu 90 dni** | 31–90 days | 28 |
-| **Bez daty końca** | `dateEnd IS NULL` | 45 |
+| **Bez daty końca** | `isIndefinite(dateEnd)` — null **or** `2099-12-31` | **1,683** |
 
 Columns: Identyfikator · Kontrahent · Przedmiot · Obowiązuje do · (ile dni) ·
 Właściciel. The day count reuses `endUrgency()` (`lib/contract-status.ts:56`), which
@@ -401,12 +413,14 @@ from "ContractHistory"
 where "columnName" = 'status_id' and "oldValue" = 'Obowiązująca' and "newValue" = 'Zakończona';
 -- expected: 2439 | 2164 | 15
 
--- 4. Records the job must never touch.
+-- 4. Records the job must never touch. Open-ended means null OR the 2099 sentinel.
 select (select count(*) from "Contract"
-          where not "isDeleted" and "statusId" = 2 and "dateEnd" is null)      open_ended,
+          where not "isDeleted" and "statusId" = 2 and "dateEnd" is null)             null_end,
        (select count(*) from "Contract"
-          where not "isDeleted" and "statusId" = 3 and "dateEnd" >= current_date) closed_early;
--- expected: 45 | 676
+          where not "isDeleted" and "statusId" = 2 and "dateEnd" = date '2099-12-31') sentinel_end,
+       (select count(*) from "Contract"
+          where not "isDeleted" and "statusId" = 3 and "dateEnd" >= current_date)     closed_early;
+-- expected: 45 | 1638 | 676     → 1683 open-ended in force
 
 -- 5. The expiry horizon — the /wygasajace groups.
 select case when "dateEnd" <= current_date + 30  then '<=30'
@@ -431,12 +445,14 @@ Manual checks:
 - [ ] Each of those history rows reads `status_id · Obowiązująca → Zakończona`, authored
       by `system`, and renders as "system (automatyczne zamknięcie)" in Historia zmian
 - [ ] Running the job twice in a day closes nothing the second time
-- [ ] The 45 open-ended contracts are untouched
+- [ ] The 45 null-dated contracts are untouched
+- [ ] The **1 638** contracts dated `2099-12-31` are untouched, appear under
+      "Bez daty końca", and show no `endUrgency` badge
 - [ ] The 676 closed-early contracts are untouched
 - [ ] A **project** with a past `dateEnd` is untouched — only `statusId = 2` qualifies
 - [ ] A soft-deleted contract with a past `dateEnd` is untouched
-- [ ] `/wygasajace` shows 187 / 13 / 28 / 45 in its four groups before the backlog run,
-      and 0 / 13 / 28 / 45 after
+- [ ] `/wygasajace` shows 187 / 13 / 28 / 1 683 in its four groups before the backlog
+      run, and 0 / 13 / 28 / 1 683 after
 - [ ] `/wygasajace` respects `contractScopeWhere` — a scoped user sees fewer
 - [ ] The `system` user cannot sign in
 - [ ] `npx tsc --noEmit` clean, `corepack yarn build` green
