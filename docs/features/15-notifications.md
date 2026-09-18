@@ -13,8 +13,8 @@ routes: ["/powiadomienia"]
 
 ## Why
 
-There are 14,683 notification deliveries in the database, **13,933 of them unread**,
-and no screen anywhere shows them. Our own application writes new ones every time
+There are 14,683 notification deliveries in the database, **750 of them still
+unread**, and no screen anywhere shows them. Our own application writes new ones every time
 someone uses "zadaj pytanie" or "poproś o formularz" (`actions.ts:497,553`) and they
 go straight into a table nobody reads.
 
@@ -83,7 +83,7 @@ schema — it lives in a trigger.
 | `Shoutbox` rows | 1,184 |
 | … with `messageId` / `contractId` / `remarkId` | 1,184 / 1,184 / 1,184 — **never null** |
 | `ShoutboxRecipient` rows | 14,683 |
-| Unread / read | 13,933 / 750 |
+| **Read / unread** | **13,933 / 750** — `readed = 1` is *read* |
 | Recipients per notification | avg 12.4, min 1, max 19 |
 | **Distinct users who ever received one** | **21** |
 
@@ -91,8 +91,17 @@ Twenty-one people across eleven years, with a fan-out that tracks the size of th
 admin list as it grew and shrank (currently 10 entries, 16 revoked). That is the
 trigger, exactly.
 
-**94.9% unread.** A queue that nobody drains is a queue nobody uses — worth
-remembering when deciding how loud the new one should be.
+**94.9% read.** The polarity is worth stating plainly because it is easy to get
+backwards: legacy's column is `readed int(1) DEFAULT '0'` and `shoutboxview`
+selects `WHERE su.readed = 0` (`cru.sql:431756`, `:447516`), so 1 means read.
+An earlier draft of this document — and `plan.md` — reported 13,933 as *unread*.
+It is the opposite.
+
+So the inbox was **used**: the twenty-one people who received notifications
+drained them, leaving 750 outstanding, about 36 each. That strengthens the case for
+building the screen and weakens one argument against the all-admins trigger — the
+recipients were not ignoring it. The case for changing the recipients rests on the
+fan-out data below, not on fatigue.
 
 ### Message templates
 
@@ -111,8 +120,11 @@ it.
 
 - **Legacy:** the trigger above. 21 distinct recipients ever; contract owners are
   never notified about their own contracts unless they happen to be admins.
-- **Why it is wrong:** it makes the inbox useless for the people who need it and
-  noisy for the ten who do not. 94.9% unread is the measurable consequence.
+- **Why it is wrong:** it makes the inbox useless for the people who need it —
+  a contract owner is never told about a note on their own contract unless they
+  happen to be an administrator — and it puts every note in front of ten people who
+  mostly do not need it. Note that the read rate does **not** support the "nobody
+  reads it" version of this argument: 94.9% were read.
 - **We do:** notify the people connected to the record — its owners
   (`ContractUser`), its active reviewers (`Opinion.userId` where `active`), and the
   note's author excluded (you do not need telling about your own note). Keep an admin
@@ -136,8 +148,9 @@ it.
 
 - **Legacy:** `shoutboxusers.readed`, no timestamp, no "mark all".
 - **We do:** keep the flag, add `readAt` so the inbox can show when something was
-  handled, and offer "oznacz wszystkie jako przeczytane" — 13,933 unread items make
-  a bulk action mandatory on first login or nobody will ever reach zero.
+  handled, and offer "oznacz wszystkie jako przeczytane". With 750 outstanding
+  across 21 people the bulk action is a convenience rather than a necessity, but it
+  costs nothing.
 - **Sign-off:** not needed. Note the migration adds a nullable column; historical
   rows have no read timestamp and never will.
 
@@ -243,9 +256,11 @@ A recipient row belonging to someone else must 404, not 403.
 -- 1. Baseline.
 select (select count(*) from "Shoutbox")                                  as events,
        (select count(*) from "ShoutboxRecipient")                         as deliveries,
+       (select count(*) from "ShoutboxRecipient" where "isRead")          as read_,
        (select count(*) from "ShoutboxRecipient" where not "isRead")      as unread,
        (select count(distinct "userId") from "ShoutboxRecipient")         as recipients;
--- expected: 1184 | 14683 | 13933 | 21
+-- expected: 1184 | 14683 | 13933 read | 750 unread | 21
+-- note the polarity: legacy `readed = 1` means READ (cru.sql:431756, :447516)
 
 -- 2. Fan-out shape — the evidence for the all-admins trigger.
 select round(avg(n),1), min(n), max(n)
@@ -296,12 +311,10 @@ Manual checks:
 1. **Q5 (sign-off) — recipient selection.** Notify owners and reviewers instead of
    all administrators. Confirm, and decide whether administrators keep an opt-in
    "notify me about everything" switch.
-2. **What to do with 13,933 historical unread items.** They belong to 21 people,
-   mostly admins, and are up to eleven years old. Options: leave them (the first
-   login is then a wall of history), mark everything older than a cutoff as read
-   during migration, or leave them unread but default the inbox to "Wszystkie".
-   Recommend marking pre-cutover items read at migration time and saying so in the
-   release note.
+2. **What to do with the 750 historical unread items.** They belong to 21 people,
+   mostly admins, and are up to eleven years old — about 36 each. Small enough to
+   leave alone, which is the recommendation: no migration, no bulk mark-as-read, and
+   the first login shows a genuine, short backlog rather than a wall.
 3. **Are notifications ever needed for anything other than notes?** `message` has one
    row. Status changes, opinion requests and expiring contracts are all plausible
    future types — spec 19 (auto-close) and spec 16 (opinions) both have a natural
