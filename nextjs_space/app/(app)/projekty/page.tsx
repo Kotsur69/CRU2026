@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { buttonClass } from "@/components/ui/button";
 import { contractorLabel, userLabel } from "@/lib/format";
+import { ASSIGNEE_SELECT, loadOwnerOptions } from "@/lib/contract-access";
 import { SearchForm } from "@/features/projekty/search-form";
 import { ProjectsTable, type ProjectRow } from "@/components/projekty/projects-table";
 
@@ -40,9 +42,10 @@ function buildWhere(sp: SP): Prisma.ContractWhereInput {
   const status = intParam(sp.status);
   if (status !== undefined) and.push({ statusId: status });
 
-  // The project owner is a full-access row in contract_users, not a read-only grant.
+  // Owners are the project's assignees; `onlyRead` grades their rights, it does not
+  // decide who counts as an owner (see lib/contract-access.ts).
   const owner = intParam(sp.owner);
-  if (owner !== undefined) and.push({ userAccess: { some: { userId: owner, readOnly: false } } });
+  if (owner !== undefined) and.push({ userAccess: { some: { userId: owner } } });
 
   const documentType = intParam(sp.type);
   if (documentType !== undefined) and.push({ documentTypeId: documentType });
@@ -107,11 +110,7 @@ async function loadDictionaries() {
         orderBy: [{ shortName: "asc" }, { fullName: "asc" }],
         select: { id: true, shortName: true, fullName: true },
       }),
-      prisma.user.findMany({
-        where: { active: true },
-        orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { login: "asc" }],
-        select: { id: true, firstName: true, lastName: true, login: true },
-      }),
+      loadOwnerOptions(),
     ]);
 
   return {
@@ -122,7 +121,7 @@ async function loadDictionaries() {
     domains: domains.map((d) => ({ id: String(d.id), name: d.name })),
     businesslines: businesslines.map((b) => ({ id: String(b.id), name: b.name })),
     contractors: contractors.map((k) => ({ id: String(k.id), name: contractorLabel(k) })),
-    owners: owners.map((u) => ({ id: String(u.id), name: userLabel(u) })),
+    owners,
   };
 }
 
@@ -143,10 +142,8 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
         status: true,
         contractor: true,
         userAccess: {
-          where: { readOnly: false },
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, login: true } },
-          },
+          orderBy: { readOnly: "asc" },
+          include: { user: { select: ASSIGNEE_SELECT } },
         },
         // "Opiniujący" — whoever was asked for an opinion in the FAU round.
         opinions: {
@@ -201,11 +198,16 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
 
   return (
     <div>
-      <div className="mb-4 flex items-end justify-between">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <h1 className="font-heading text-2xl font-semibold">Projekty</h1>
-        <span className="text-sm text-muted-foreground">
-          Znaleziono: <strong className="text-foreground">{total}</strong>
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">
+            Znaleziono: <strong className="text-foreground">{total}</strong>
+          </span>
+          <Link href="/projekty/nowy" className={buttonClass("primary")}>
+            Dodaj nowy wpis
+          </Link>
+        </div>
       </div>
 
       <SearchForm dicts={dicts} />

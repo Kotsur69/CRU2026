@@ -11,6 +11,8 @@ import {
 } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { projectStatusTone, endUrgency } from "@/lib/contract-status";
+import { currentActor, canEditContract } from "@/lib/authz";
+import { ContractActions } from "@/features/kontrakty/contract-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -97,8 +99,10 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
         select: { id: true, identifier: true },
       },
       attachments: { orderBy: [{ isFinal: "desc" }, { id: "asc" }] },
+      // Every contract_users row is an assignee; `onlyRead` grades editing rights and does
+      // not decide ownership (see lib/contract-access.ts).
       userAccess: {
-        where: { readOnly: false },
+        orderBy: { readOnly: "asc" },
         include: { user: { select: { id: true, firstName: true, lastName: true, login: true } } },
       },
       opinions: {
@@ -142,6 +146,9 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
   );
   const hasAnnexLinks = Boolean(c.parent) || c.annexes.length > 0;
 
+  const actor = await currentActor();
+  const canEdit = actor !== null && (await canEditContract(actor, c.id));
+
   return (
     <div className="max-w-5xl space-y-5">
       {/* Nagłówek */}
@@ -165,10 +172,13 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
         {c.description && <p className="mt-2 text-muted-foreground">{c.description}</p>}
       </div>
 
+      {/* Pasek akcji — ten sam co przy umowie (audyt 1.5). */}
+      <ContractActions recordId={c.id} basePath="/projekty" canEdit={canEdit} allowAnnexes />
+
       {/* Kluczowe fakty workflow */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Fact label="Opiniujący">{reviewers.length ? reviewers.join(", ") : "—"}</Fact>
-        <Fact label="Wysłane do podpisu">
+        <Fact label="Data wysłania do podpisu">
           <span className="tabular-nums">{formatDate(c.sentOn)}</span>
         </Fact>
         <Fact label="Spółka">{c.company?.shortName}</Fact>
@@ -194,7 +204,7 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
             <Field label="Status">{c.status?.name}</Field>
             <Field label="Opiniujący">{reviewers.length ? reviewers.join(", ") : null}</Field>
             <Field label="Zlecono opiniowanie">{yesNo(c.opinionsRequested)}</Field>
-            <Field label="Wysłane do podpisu">
+            <Field label="Data wysłania do podpisu">
               <span className="tabular-nums">{formatDate(c.sentOn)}</span>
             </Field>
             <Field label="Ostatnia notatka">{c.remarkEntries[0]?.body ?? c.remarks}</Field>
@@ -232,7 +242,12 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
               <span className="tabular-nums">{formatDate(c.dateBegin)}</span>
             </Field>
             <Field label="Data zakończenia">
-              <span className="tabular-nums">{formatDate(c.dateEnd)}</span>
+              {/* Brak daty JEST zapisem „na czas nieokreślony" — tak czyta to legacy. */}
+              {c.dateEnd === null ? (
+                "na czas nieokreślony"
+              ) : (
+                <span className="tabular-nums">{formatDate(c.dateEnd)}</span>
+              )}
               {end?.label && (
                 <Badge tone={end.tone} className="ml-2">
                   {end.label}
@@ -265,6 +280,7 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
             dwuznaczne przy braku danych, więc trzymamy się zapisu legacy. */}
         <Section title="Cechy">
           <dl>
+            <Field label="Weksel">{yesNo(c.bill)}</Field>
             <Field label="Gwarancja/ubezpieczenie">{yesNo(c.insuranceGuarantee)}</Field>
             <Field label="Podmioty powiązane">{yesNo(c.companiesConnected)}</Field>
             <Field label="Formularz">{c.tempForm === null ? "—" : yesNo(c.tempForm)}</Field>
@@ -395,23 +411,6 @@ export default async function ProjektPreviewPage({ params }: { params: { id: str
           </ul>
         )}
 
-        {/* Akcje legacy (generowanie PDF, wysyłka pytania) świadomie nieaktywne:
-            wymagają logiki z plików .php, których nie mamy. */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {["Formularz akceptacji umowy-pdf", "Formularz akceptacji umowy", "zadaj pytanie"].map(
-            (label) => (
-              <button
-                key={label}
-                type="button"
-                disabled
-                title="Akcja niedostępna — moduł FAU w budowie"
-                className="cursor-not-allowed rounded-md border px-3 py-1.5 text-sm text-muted-foreground opacity-60"
-              >
-                {label}
-              </button>
-            ),
-          )}
-        </div>
       </Section>
 
       {/* Audyt — legacy podaje znacznik czasu co do sekundy oraz autora wpisu. */}

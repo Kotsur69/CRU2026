@@ -24,4 +24,16 @@ export interface StorageAdapter {
 
   /** URL/ścieżka do pobrania — dla adaptera lokalnego trasa proxy /api/files. */
   getDownloadUrl(key: string): Promise<string>;
+
+  /**
+   * Zapis nowego obiektu. Klucz wyznacza adapter (legacy: `attachments/<md5>.<ext>`),
+   * żeby UI nigdy nie układał ścieżek w magazynie.
+   *
+   * Zwraca klucz zapisanego obiektu. Gdy identyczna treść już tam jest, adapter może
+   * zwrócić klucz istniejącego obiektu zamiast zapisywać duplikat.
+   */
+  put(filename: string, data: Buffer): Promise<string>;
+
+  /** Usunięcie obiektu — dla plików wgranych do formularza, który porzucono. */
+  remove(key: string): Promise<void>;
 }

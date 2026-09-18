@@ -16,14 +16,18 @@ export async function GET(
   const key = params.key.map(decodeURIComponent).join("/");
   const storage = getStorage();
 
-  if (!(await storage.exists(key))) {
-    return new NextResponse("Not found", { status: 404 });
+  // Klucz pochodzi z URL-a, więc adapter może go odrzucić (próba wyjścia poza root).
+  // To błąd żądania, nie awaria serwera — nie pozwalamy mu wypłynąć jako 500.
+  let buffer: Buffer;
+  let stat: Awaited<ReturnType<typeof storage.stat>>;
+  try {
+    if (!(await storage.exists(key))) {
+      return new NextResponse("Not found", { status: 404 });
+    }
+    [buffer, stat] = await Promise.all([storage.getBuffer(key), storage.stat(key)]);
+  } catch {
+    return new NextResponse("Bad request", { status: 400 });
   }
-
-  const [buffer, stat] = await Promise.all([
-    storage.getBuffer(key),
-    storage.stat(key),
-  ]);
 
   return new NextResponse(buffer, {
     headers: {

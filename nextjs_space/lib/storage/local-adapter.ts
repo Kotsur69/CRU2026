@@ -1,6 +1,20 @@
 import { promises as fs } from "fs";
+import { createHash } from "crypto";
 import path from "path";
 import type { StorageAdapter, StoredObject } from "./types";
+
+/** Katalog, do którego trafiają wgrywki — ten sam, w którym leży eksport z Bytomia. */
+const UPLOAD_PREFIX = "attachments";
+
+/**
+ * Rozszerzenie z nazwy pliku od użytkownika. Nazwa jest niezaufana, a trafia do klucza
+ * storage, więc przepuszczamy wyłącznie krótki, alfanumeryczny sufiks — nic, co mogłoby
+ * nieść separator ścieżki albo drugą kropkę.
+ */
+function safeExtension(filename: string): string | null {
+  const raw = path.extname(filename).slice(1).toLowerCase();
+  return /^[a-z0-9]{1,8}$/.test(raw) ? raw : null;
+}
 
 // Adapter-stub symulujący fizyczny serwer plików (Bytom) przez lokalny katalog.
 // Klucz = ścieżka względna wewnątrz STORAGE_LOCAL_ROOT. Do podmiany bez zmian w UI.
@@ -163,5 +177,37 @@ export class LocalStorageAdapter implements StorageAdapter {
   async getDownloadUrl(key: string): Promise<string> {
     // Adapter lokalny nie ma publicznego URL — pobieranie przez trasę proxy.
     return `/api/files/${encodeURIComponent(key)}`;
+  }
+
+  /**
+   * Nowe pliki trafiają dokładnie tam, gdzie leży eksport z Bytomia i pod tą samą
+   * konwencją `attachments/<md5>.<ext>`. Klucz z md5 TREŚCI daje przy okazji deduplikację
+   * — ta sama umowa wgrana dwa razy zajmuje jedno miejsce, a indeks rdzeni (patrz
+   * `stemIndex`) pozostaje jednoznaczny, bo md5 się nie powtarza.
+   */
+  async put(filename: string, data: Buffer): Promise<string> {
+    const digest = createHash("md5").update(data).digest("hex");
+    const ext = safeExtension(filename);
+    const key = ext ? `${UPLOAD_PREFIX}/${digest}.${ext}` : `${UPLOAD_PREFIX}/${digest}`;
+
+    const full = this.resolve(key);
+    try {
+      // Ta sama treść jest już w magazynie — nie duplikujemy bajtów.
+      if ((await fs.stat(full)).isFile()) return key;
+    } catch {
+      // Brak pliku: zapisujemy poniżej.
+    }
+
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, data);
+    this.stemIndexes.delete(UPLOAD_PREFIX);
+    return key;
+  }
+
+  async remove(key: string): Promise<void> {
+    const full = await this.locate(key);
+    if (!full) return;
+    await fs.unlink(full);
+    this.stemIndexes.delete(path.posix.dirname(key));
   }
 }

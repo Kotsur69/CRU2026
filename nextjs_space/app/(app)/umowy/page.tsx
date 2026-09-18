@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { buttonClass } from "@/components/ui/button";
 import { contractorLabel, userLabel } from "@/lib/format";
+import { ASSIGNEE_SELECT, loadOwnerOptions } from "@/lib/contract-access";
 import { SearchForm } from "@/features/umowy/search-form";
 import { ContractsTable, type ContractRow } from "@/components/umowy/contracts-table";
 
@@ -70,9 +72,10 @@ function buildWhere(sp: SP): Prisma.ContractWhereInput {
   const contractor = intParam(sp.contractor);
   if (contractor !== undefined) and.push({ contractorId: contractor });
 
-  // The contract owner is a full-access row in contract_users, not a read-only grant.
+  // Owners are the contract's assignees; `onlyRead` grades their rights, it does not
+  // decide who counts as an owner (see lib/contract-access.ts).
   const owner = intParam(sp.owner);
-  if (owner !== undefined) and.push({ userAccess: { some: { userId: owner, readOnly: false } } });
+  if (owner !== undefined) and.push({ userAccess: { some: { userId: owner } } });
 
   if (sp.nip) and.push({ contractor: { vatId: { contains: sp.nip } } });
   if (sp.obsc === "1") and.push({ obsc: true });
@@ -130,11 +133,7 @@ async function loadDictionaries() {
       orderBy: [{ shortName: "asc" }, { fullName: "asc" }],
       select: { id: true, shortName: true, fullName: true },
     }),
-    prisma.user.findMany({
-      where: { active: true },
-      orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { login: "asc" }],
-      select: { id: true, firstName: true, lastName: true, login: true },
-    }),
+    loadOwnerOptions(),
   ]);
 
   return {
@@ -146,7 +145,7 @@ async function loadDictionaries() {
     natures: natures.map((n) => ({ id: String(n.id), name: n.name })),
     businesslines: businesslines.map((b) => ({ id: String(b.id), name: b.name })),
     contractors: contractors.map((k) => ({ id: String(k.id), name: contractorLabel(k) })),
-    owners: owners.map((u) => ({ id: String(u.id), name: userLabel(u) })),
+    owners,
   };
 }
 
@@ -175,10 +174,8 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
         noticePeriod: true,
         contractor: true,
         userAccess: {
-          where: { readOnly: false },
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, login: true } },
-          },
+          orderBy: { readOnly: "asc" },
+          include: { user: { select: ASSIGNEE_SELECT } },
         },
         _count: { select: { attachments: true, annexes: true } },
       },
@@ -231,11 +228,16 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
 
   return (
     <div>
-      <div className="mb-4 flex items-end justify-between">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <h1 className="font-heading text-2xl font-semibold">Umowy</h1>
-        <span className="text-sm text-muted-foreground">
-          Znaleziono: <strong className="text-foreground">{total}</strong>
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground">
+            Znaleziono: <strong className="text-foreground">{total}</strong>
+          </span>
+          <Link href="/umowy/nowy" className={buttonClass("primary")}>
+            Dodaj nowy wpis
+          </Link>
+        </div>
       </div>
 
       <SearchForm dicts={dicts} />

@@ -20,6 +20,16 @@ export function projectStatusTone(name?: string | null): Tone {
   return "neutral"; // w toku
 }
 
+/** Ton badge'a dla statusu rekordu Działu ryzyka (aktywny / w sądzie / zakończony). */
+export function riskStatusTone(name?: string | null): Tone {
+  if (!name) return "neutral";
+  const n = name.toLowerCase();
+  if (n.includes("w sądzie")) return "danger";
+  if (n.includes("aktywny")) return "warning";
+  if (n.includes("zakończ")) return "neutral";
+  return "info";
+}
+
 const DAY_MS = 86_400_000;
 const SOON_DAYS = 30; // ≤ 30 dni → pilne (czerwony)
 const WATCH_DAYS = 90; // ≤ 90 dni → obserwacja (bursztyn)

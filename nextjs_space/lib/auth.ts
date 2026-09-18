@@ -41,6 +41,9 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        // The numeric legacy id is what every write is attributed to (modifiedById,
+        // ContractHistory.userId, the contract ACL), so it has to survive in the token.
+        token.uid = Number(user.id);
         token.role = (user as { role?: string }).role;
         token.login = (user as { login?: string }).login;
       }
@@ -48,6 +51,7 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
+        session.user.id = token.uid as number;
         session.user.role = token.role as string | undefined;
         session.user.login = token.login as string | undefined;
       }
