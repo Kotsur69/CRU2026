@@ -219,6 +219,21 @@ Manual checks:
 1. **Q1 (blocking) — the export itself.** Needed columns: `id`, `login`, `name`,
    `surname`, `email`, `active`, and ideally `phone` and `desc`. Explicitly **not**
    `password`. Requested from the Bytom admins; still outstanding.
+
+   **Narrowed by spec 25.** The `mailing_lists` table already in our database holds
+   **275 real staff names with 269 real `@arcelormittal.com` addresses** —
+   `Krzysztof Andrzejczak / krzysztof.andrzejczak@arcelormittal.com` and so on. It
+   is the only place in the whole dump where a human name meets an address, and
+   nothing in the application reads it. The audit gives the login convention from
+   the contract preview (`mborowiecka`, `mgolosz` — first initial plus surname,
+   `audyt §1.4`), and the address convention is `imie.nazwisko@` with diacritics
+   folded, so the two are matchable in one direction.
+
+   So the minimum viable ask is **`id` and `login`, two columns**, from which up to
+   275 of the 452 users can be resolved to a name and an address without any further
+   export. Spec 25 specifies the matching tool; it proposes and never writes
+   (Q67). The full export is still better — it covers the other 177 and carries
+   `active` — but it is no longer all-or-nothing.
 2. **Address, `nip` and `serwis`.** Take them or drop them? Recommend dropping the
    four address columns and `serwis`, and asking what a `nip` on a user row means
    before deciding — it may indicate external/contractor accounts, which would matter
