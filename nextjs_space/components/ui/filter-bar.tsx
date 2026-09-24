@@ -30,7 +30,8 @@ export interface FilterBarProps {
   action: string;
   fields: FilterField[];
   values: Record<string, string | undefined>;
-  defaultPageSize: number;
+  /** Pominięty — lista bez paginacji (np. 35 lokalizacji), więc bez pola „Na stronie". */
+  defaultPageSize?: number;
   /** Legacy Umów podpisuje przycisk „szukaj" małą literą. */
   submitLabel?: string;
   /** Szerokość siatki na dużym ekranie; rejestry z kilkunastoma polami biorą 6. */
@@ -114,20 +115,22 @@ export function FilterBar({
               {f.label}
             </label>
           ))}
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Na stronie</span>
-            <select
-              name="pageSize"
-              defaultValue={value("pageSize") || String(defaultPageSize)}
-              className="rounded-md border border-input px-2 py-1 text-sm"
-            >
-              {PAGE_SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
+          {defaultPageSize !== undefined && (
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Na stronie</span>
+              <select
+                name="pageSize"
+                defaultValue={value("pageSize") || String(defaultPageSize)}
+                className="rounded-md border border-input px-2 py-1 text-sm"
+              >
+                {PAGE_SIZES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="ml-auto flex gap-2">
             <Link href={action} className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted">
               Wyczyść
