@@ -11,6 +11,20 @@ routes: ["/projekty/[id]", "/projekty/[id]/opinie", "/opinie"]
 
 # 16 — Obieg opinii (FAU workflow)
 
+> **Where we stand (2026-09-24): in progress (interrupted).** The opinion round on the record is built; the `/opinie` report is not.
+>
+> - **Done:**
+>   - the "Obieg FAU" section on the record: ask (with suggested group members), answer, withdraw, progress and coordinator;
+>   - the `requestedAt` column;
+>   - notifications through spec 15's helper;
+>   - the "Opiniujący" register column.
+> - **Not done:** `/opinie` ("Zaległe opinie"), its home-page tile and its menu entry.
+> - **Waiting on:**
+>   - **Q20**, whether closing a record should close its open requests (2,891 are left open in legacy);
+>   - Q19, taken at its proposal (`canEditContract`);
+>   - Q21, still open.
+> - **Next step:** after Q20, build `/opinie` on `requestedAt` and `lib/opinions.ts`. Spec 21's links to it depend on this. Details are in "Implementation notes" at the end.
+
 ## Why
 
 FAU — **Formularz Akceptacji Umowy** — is the internal approval round a draft

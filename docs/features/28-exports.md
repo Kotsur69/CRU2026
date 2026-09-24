@@ -11,6 +11,11 @@ routes: ["/api/export/[rodzaj]"]
 
 # 28 — Eksporty (Excel, CSV, PDF)
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Waiting on:** Q70 (what the legacy reports contain) governs the report exports. Exporting the registers themselves does not wait on it.
+> - **Next step:** can start now with the register exports, on top of spec 05's shared table and filters.
+
 ## Why
 
 Spec 24 reaches the conclusion this spec implements. Legacy's reports are

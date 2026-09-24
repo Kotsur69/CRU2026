@@ -11,6 +11,12 @@ routes: ["/wygasajace"]
 
 # 29 — Przypomnienia o końcu umowy
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Depends on:** spec 19 (auto-close).
+> - **Waiting on:** Q33 (should expiring contracts notify anyone?). There is no SMTP anywhere in the codebase, and no e-mail will be sent without sign-off.
+> - **Next step:** after spec 19. An in-app list of contracts expiring within 90 days would need no e-mail.
+
 ## Why
 
 A contract register exists so that nobody is surprised by a date. Legacy has every

@@ -11,6 +11,15 @@ routes: ["/umowy", "/wygasajace"]
 
 # 19 — Automatyczne zamykanie umów i wygasanie
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Waiting on:**
+>   - **Q31**: closing the 173-record backlog is a bulk change to legal records and will not be done without sign-off;
+>   - **Q4 / Q32**: where the nightly job runs, including the "has not run in 48 h" alarm;
+>   - Q48.
+> - **Can start now:** the closing rule as tested code and a dry-run report. No scheduling and no bulk update.
+> - **Next step:** that dry-run report.
+
 ## Why
 
 **8,379 of the 20,137 live records sit in "Zakończona", and 4,596 of them got there

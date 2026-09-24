@@ -12,7 +12,9 @@ without going back to `cru.sql` or the legacy audit to re-derive anything.
   finished work.
 - **Template:** [`00-TEMPLATE.md`](00-TEMPLATE.md). Copy it; keep the section order.
 - **All 34 are written.** `status:` tracks *implementation*, not whether the
-  document exists — every spec below is still `todo` as code.
+  document exists. Every unfinished spec opens with a **"Where we stand"** box
+  under its title: what is built, what is left, what it waits on (which open
+  question) and the next step.
 
 Strategy lives elsewhere and is not replaced by these documents:
 [`../../plan.md`](../../plan.md) (direction and architecture),
@@ -67,11 +69,11 @@ Data is imported and complete; there is no UI at all.
 | # | Spec | Status | Depends on |
 |---|---|---|---|
 | 20 | [Kontrahenci](20-kontrahenci.md) | todo | 05 |
-| 21 | [Grupy](21-grupy.md) | todo | 03, 04 |
+| 21 | [Grupy](21-grupy.md) | in-progress | 03, 04 |
 | 22 | [Lokalizacje](22-lokalizacje_done.md) | done | 03 |
 | 23 | [Dostępy](23-dostepy.md) | todo | 03, 04 |
 | 24 | [Raporty](24-raporty.md) | todo | 28 |
-| 25 | [Mailing](25-mailing.md) | todo | 29 |
+| 25 | [Mailing](25-mailing.md) | in-progress | 29 |
 | 26 | [Supply chain (discovery)](26-supply-chain.md) | todo | — |
 
 ## E. Planned new features

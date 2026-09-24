@@ -11,6 +11,15 @@ routes: ["/umowy/[id]/podpis", "/api/adobe/webhook"]
 
 # 27 — Adobe Acrobat Sign
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Waiting on:**
+>   - **Q2**: a paid Acrobat Sign account with API access and a sandbox;
+>   - **Q3**: which signature level;
+>   - Q22.
+> - **Depends on:** spec 18 (attachments, partly done) and spec 31 (deployment).
+> - **Next step:** Q2 and Q3.
+
 ## Why
 
 This is not a parity feature. `plan.md:17` makes it the project's **second,

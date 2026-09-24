@@ -11,6 +11,17 @@ routes: ["/umowy/[id]", "/umowy/[id]/pytanie"]
 
 # 14 — Notatki (notes)
 
+> **Where we stand (2026-09-24): in progress (interrupted).** Everything except deleting a note is built.
+>
+> - **Done:**
+>   - the notes thread on the record (newest first, "pokaż wszystkie");
+>   - "dodaj notatkę", with a 4,000-character limit enforced on the server;
+>   - the question page reusing the thread;
+>   - the optional "Ostatnia notatka" register column.
+> - **Not done:** deleting a note.
+> - **Waiting on:** **Q14**, whether the notes table is shared with another system. It must be answered before delete ships.
+> - **Next step:** after Q14, add `deleteNote`: a soft delete (`active = false`), author or admin only, with a confirmation. A small change. Details are in "Implementation notes" at the end.
+
 ## Why
 
 50,737 notes across 15,522 contracts — **three quarters of the register has at

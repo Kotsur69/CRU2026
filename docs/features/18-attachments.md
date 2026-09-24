@@ -11,6 +11,22 @@ routes: ["/umowy/[id]", "/api/attachments", "/api/files/[...key]"]
 
 # 18 — Załączniki (attachments)
 
+> **Where we stand (2026-09-24): in progress (interrupted mid-work).** Safe downloads and the attachment list are built; the repair scripts are not.
+>
+> - **Done:**
+>   - the download route `/api/files/[...key]`, which checks read access through `canReadContract`, answers 404 on refusal, shows only PDF and images inline and sends `nosniff`;
+>   - the attachment list on the record, with type and size and the badges "Wersja ostateczna", "plik pusty" and "brak pliku";
+>   - upload (with "Wersja ostateczna") and delete for editors;
+>   - the zero-byte guard;
+>   - `lib/attachments.ts` with tests.
+> - **Not done:**
+>   - `scripts/legacy/repair-attachment-paths.ts` for the seven renames (dry run by default, `--apply`);
+>   - a zero-byte class in `yarn db:verify-files`;
+>   - a browser check of list, upload and delete;
+>   - the "Dokumenty rejestrowe" list on `/kontrahenci/[id]`, which waits for spec 20 to be merged.
+> - **Waiting on:** Q27 (the missing and zero-byte files), Q28 (orphan files) and Q29. None of them blocks the code.
+> - **Next step:** the repair script, then the verify-files class. Details are in "Implementation notes" at the end.
+
 ## Why
 
 The files *are* the register. 39,272 attachment rows against 20,137 live records —

@@ -11,6 +11,12 @@ routes: ["/umowy", "/umowy/[id]", "/umowy/nowy"]
 
 # 12 — Wiele lokalizacji na rekordzie
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Already in place:** the registers filter by location on the primary location *or* any linked one (spec 06).
+> - **Waiting on:** **Q54**, whether `contract_has_location` holds additional locations or the complete set. It decides the form, the label and whether the primary field survives. Also Q55 and Q56.
+> - **Next step:** get Q54 answered. One legacy user can answer it.
+
 ## Why
 
 A contract has one **Lokalizacja** on the form and, separately, a set of locations

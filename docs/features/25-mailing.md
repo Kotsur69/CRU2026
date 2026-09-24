@@ -11,6 +11,19 @@ routes: ["/mailing", "/mailing/[id]"]
 
 # 25 — Mailing
 
+> **Where we stand (2026-09-24): in progress.** Everything except applying a match is built.
+>
+> - **Done:**
+>   - admin-only `/mailing` with the "Dopasowany użytkownik" column, the filters "bez adresu" and "niedopasowani", and count tiles;
+>   - `/mailing/[id]` with a read-only match proposal;
+>   - the `MailingContact.userId` column, which stays empty;
+>   - the read-only report `scripts/legacy/match-mailing-to-users.ts`;
+>   - the address-truncation check in the importer;
+>   - tests.
+> - **Not done:** the admin action that applies or clears a match, and writes an `AccessAudit` row.
+> - **Waiting on:** **Q67** (may the mailing list be used as a directory source?) and spec 23 (`AccessAudit`). Q68 and Q69 are recorded.
+> - **Next step:** run the report against the real `cru2026` data to confirm the counts (275 / 269 / 6). After Q67, add the apply and clear action. Details are in "Implementation notes" at the end.
+
 ## Why
 
 On the face of it this is the emptiest module in the system: 275 contacts, **one**

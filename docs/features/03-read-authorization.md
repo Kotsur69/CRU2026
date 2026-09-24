@@ -11,6 +11,12 @@ routes: ["/umowy", "/projekty", "/ryzyko", "/dostepy", "/grupy", "/lokalizacje",
 
 # 03 — Read authorization
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Already in place:** `canReadContract` in `nextjs_space/lib/authz.ts` is the single read hook, and the file download route (`/api/files/[...key]`, spec 18) already calls it. Today it lets any signed-in user read live records; soft-deleted records are admin-only.
+> - **Waiting on:** **Q18** (is `contract_users` a visibility list or only an ownership list?) decides the whole design. Also Q6, Q12, Q54 and Q63.
+> - **Next step:** once Q18 is answered, implement the scope inside `canReadContract` and in the register queries (`lib/contracts/scope.ts`).
+
 ## Why
 
 The application has no read authorization at all. `lib/authz.ts` gates writes; every

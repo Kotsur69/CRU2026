@@ -11,6 +11,13 @@ routes: []
 
 # 33 — Testy i CI
 
+> **Where we stand (2026-09-24): not started, though unit tests already exist.** There is no CI yet.
+>
+> - **Done:** Vitest is set up (`yarn test`: 9 files, 97 tests on 2026-09-24). It covers identifiers, risk numbering, history, attachments, groups, navigation and mailing matching.
+> - **Not done:** CI, E2E tests and the coverage targets.
+> - **Waiting on:** Q81 (CI runner), Q82 and Q83. Depends on spec 31.
+> - **Next step:** after Q81, run `tsc`, `yarn test` and `next build` in CI.
+
 ## Why
 
 There is **no test framework installed, no test file, and no CI**. `package.json`

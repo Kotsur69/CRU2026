@@ -11,6 +11,13 @@ routes: ["/kontrahenci/nowy", "/api/gus/lookup"]
 
 # 30 — Wyszukiwanie w REGON / GUS
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Depends on:** spec 20 (Kontrahenci).
+> - **Waiting on:** **Q59**: is a REGON/GUS lookup wanted, and when?
+> - **Can start now:** the NIP/REGON checksum validation, which the spec wants regardless.
+> - **Next step:** after spec 20 and Q59.
+
 ## Why
 
 Spec 20 documents the problem this feature solves: **177 NIP numbers are attached

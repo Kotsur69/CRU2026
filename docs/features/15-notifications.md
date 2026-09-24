@@ -11,6 +11,19 @@ routes: ["/powiadomienia"]
 
 # 15 — Powiadomienia (in-app inbox)
 
+> **Where we stand (2026-09-24): in progress (interrupted).** The inbox and the bell are built; the recipient rule is not changed.
+>
+> - **Done:**
+>   - `/powiadomienia` with "Nieprzeczytane" and "Wszystkie";
+>   - mark as read and mark all as read;
+>   - opening a notification marks it read and jumps to the record's notes;
+>   - the unread bell in the top bar;
+>   - the `readAt` column;
+>   - every writer goes through one helper, `notifyAboutRemark`.
+> - **Not done:** the new recipient rule. Today a notification goes to the record's owners, minus the author.
+> - **Waiting on:** **Q5**. Legacy notifies all admins; the proposal is owners and reviewers.
+> - **Next step:** after Q5, change only `defaultRecipients` in `lib/notifications.ts`. Details are in "Implementation notes" at the end.
+
 ## Why
 
 There are 14,683 notification deliveries in the database, **750 of them still

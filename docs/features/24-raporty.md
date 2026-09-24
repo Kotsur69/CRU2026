@@ -11,6 +11,13 @@ routes: ["/raporty", "/raporty/[rodzaj]"]
 
 # 24 — Raporty
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Depends on:** spec 28 (exports).
+> - **Waiting on:** **Q70** (what the legacy reports contain), Q71 and Q72.
+> - **Known issue:** the "Supply chain" card matches groups by name, so renaming a group changes it. Match by id instead.
+> - **Next step:** spec 28 first.
+
 ## Why
 
 Legacy exposes six ready-made reports behind a dropdown, and the audit could not

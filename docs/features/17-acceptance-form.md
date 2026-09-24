@@ -11,6 +11,15 @@ routes: ["/umowy/[id]/formularz-akceptacji", "/projekty/[id]/formularz-akceptacj
 
 # 17 — Formularz akceptacji umowy i ścieżka MDR
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Already in place:** the existing "poproś o formularz" request still works. It now notifies through spec 15's helper.
+> - **Waiting on:**
+>   - **Q23**: is `acceptance_form` dead? The proposal is to freeze it read-only.
+>   - **Q24**: should the MDR declaration be mandatory?
+>   - Q25 and Q26.
+> - **Next step:** answers to Q23 and Q24 decide whether this is a read-only screen or a new build.
+
 ## Why
 
 Two things wear the same name in this system and they are not the same thing.

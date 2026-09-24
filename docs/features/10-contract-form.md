@@ -11,6 +11,26 @@ routes: ["/umowy/nowy", "/umowy/[id]/edytuj", "/projekty/nowy", "/ryzyko/nowy"]
 
 # 10 — Formularz rekordu (contract form)
 
+> **Where we stand (2026-09-24): not started as a whole; parts arrived with other specs.**
+>
+> - **Done elsewhere:**
+>   - numbering and the identifier preview (spec 02);
+>   - both annex modes and the "no annex to an annex" guard (spec 11);
+>   - risk numbering and the letter/domain mismatch warning (spec 08);
+>   - the zero-byte upload guard (spec 18).
+> - **Not done yet (these need no sign-off):**
+>   - raise the `obscDescription` limit to 4,000;
+>   - display the `???` currency properly;
+>   - show year 1900 as "(nieznana)";
+>   - warn on implausible date ranges;
+>   - a clear message when a frozen record's form is opened;
+>   - make the debtor required on risk records.
+> - **Waiting on:**
+>   - **Q48**, showing `2099-12-31` as "na czas nieokreślony";
+>   - **Q7**, whether the creator is auto-added as owner;
+>   - Q9, Q10, Q49 and Q50, which are semantics.
+> - **Next step:** the six unblocked fixes above.
+
 ## Why
 
 One form serves six entry points — new contract, new project, new risk record, edit,

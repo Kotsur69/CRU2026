@@ -11,6 +11,12 @@ routes: ["/api/files/[...key]"]
 
 # 32 — Magazyn plików i kopie zapasowe
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Depends on:** spec 18 (attachments, partly done).
+> - **Waiting on:** Q30 / Q4 (where the 49 GB live), Q78, Q79 and Q80.
+> - **Next step:** Q4.
+
 ## Why
 
 **49 GB across 39,281 files**, and the database that describes them is 45 MB. By

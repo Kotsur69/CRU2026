@@ -11,6 +11,12 @@ routes: []
 
 # 34 — Cutover
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Depends on:** every other spec.
+> - **Waiting on:** Q1, Q4 and Q84.
+> - **Next step:** nothing until the specs it depends on are done.
+
 ## Why
 
 One day the legal department stops using the system at `10.222.125.213` and starts

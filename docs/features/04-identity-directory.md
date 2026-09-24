@@ -11,6 +11,12 @@ routes: ["/login"]
 
 # 04 — Identity and directory
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Waiting on:** **Q1**, the export of the `am_admin` user directory. Until then every user is a `legacy-<id>` placeholder and only the service account can sign in. Q67 is related.
+> - **Useful already:** spec 25 added a read-only matching report, `scripts/legacy/match-mailing-to-users.ts`, which proposes accounts for 269 mailing addresses. Nothing is applied.
+> - **Next step:** obtain the Q1 export.
+
 ## Why
 
 CRU never owned its users. The `users` "table" is a database view onto a separate

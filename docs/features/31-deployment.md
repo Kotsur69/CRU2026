@@ -11,6 +11,11 @@ routes: []
 
 # 31 — Wdrożenie i utrzymanie
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Waiting on:** **Q4** (where production runs), Q75 (Docker or a plain Node service), Q76 (who operates it) and Q77 (staging).
+> - **Next step:** Q4.
+
 ## Why
 
 Nothing in this repository can be deployed today. There is no Dockerfile, no reverse

@@ -11,6 +11,21 @@ routes: ["/grupy", "/grupy/[id]"]
 
 # 21 — Grupy
 
+> **Where we stand (2026-09-24): in progress (interrupted).** The group screens and membership editing are built; the links to `/opinie` are not.
+>
+> - **Done:**
+>   - admin-only `/grupy` list and `/grupy/[id]` detail (404 for others);
+>   - "Dodaj członka", "usuń" and "Edytuj";
+>   - membership history rows with date, author and action (migration `20260924121000_group_history_audit`);
+>   - "Byli członkowie";
+>   - "Grupy" hidden from the menu for non-admins.
+> - **Not done:** links from opinion types to `/opinie?type=N`. They are plain text for now.
+> - **Waiting on:**
+>   - spec 16's `/opinie`, which is held for Q20;
+>   - member names stay `legacy-<id>` until Q1;
+>   - Q60 and Q61 recorded; Q62 followed (no group create or delete).
+> - **Next step:** re-run the build, smoke test and browser flows on the merged branch, which was only typechecked and unit-tested after the final rebase. Then add the `/opinie` links when that screen exists. Details are in "Implementation notes" at the end.
+
 ## Why
 
 Fifteen functional groups with 428 memberships. Eight of them are the answer to

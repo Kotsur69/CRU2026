@@ -11,6 +11,13 @@ routes: ["/dostepy", "/dostepy/[id]"]
 
 # 23 — Dostępy
 
+> **Where we stand (2026-09-24): not started.** Nothing in this spec is built yet.
+>
+> - **Depends on:** spec 03 (read authorization) and spec 04 (identity).
+> - **Waiting on:** Q1, Q12 and Q66.
+> - **Known gap:** `/dostepy/[id]` still shows every user's groups to non-admins. Its links to `/grupy` now return 404 for them, because spec 21 gates `/grupy`.
+> - **Next step:** after spec 03, gate `/dostepy` for admins and build the `AccessAudit` log. Spec 25 also needs that log.
+
 ## Why
 
 This is the administration console for the authorization model spec 03 implements:

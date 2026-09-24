@@ -11,6 +11,11 @@ routes: ["/supply-chain"]
 
 # 26 — Supply chain — dokument rozpoznawczy
 
+> **Where we stand (2026-09-24): not started (discovery spec).** Nothing to build yet.
+>
+> - **Waiting on:** Q16, Q42, **Q73** (does the legacy server host more than the `cru` database?) and Q74 (is Supply chain in scope at all?).
+> - **Next step:** get Q73 and Q74 answered.
+
 ## Why
 
 Supply chain is the tenth item in the legacy menu and the only module with **no
