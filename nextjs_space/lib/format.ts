@@ -60,6 +60,17 @@ export function userLabel(user: {
   return full || user.login || `#${user.id}`;
 }
 
+/**
+ * A user as a picker option. Legacy marks an inactive account with a `[na]` suffix
+ * (audyt §2.3). A placeholder's activity is unknown rather than false
+ * (docs/features/04), so it gets no suffix — otherwise all 451 would read `[na]`.
+ */
+export function userOptionLabel(
+  user: Parameters<typeof userLabel>[0] & { active: boolean; isPlaceholder: boolean },
+): string {
+  return !user.active && !user.isPlaceholder ? `${userLabel(user)} [na]` : userLabel(user);
+}
+
 /** Display name for a contractor — legacy keeps a short and a full name. */
 export function contractorLabel(contractor: {
   id: number;

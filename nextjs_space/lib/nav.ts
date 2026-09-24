@@ -9,6 +9,11 @@ export interface NavItem {
   icon: LucideIcon;
   /** false = moduł jeszcze niebudowany (placeholder / wygaszony). */
   ready: boolean;
+  /**
+   * true = ekran administracyjny: w menu tylko dla administratora (docs/features/03).
+   * Menu to wygoda, nie zabezpieczenie — strona i tak odpowiada 404 (`requireAdmin`).
+   */
+  adminOnly?: boolean;
 }
 
 // 10 pozycji menu legacy (audyt sekcja 0). Wszystkie poza Supply chain mają pokrycie
@@ -21,9 +26,14 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Dział ryzyka", href: "/ryzyko", icon: ShieldAlert, ready: true },
   { label: "Supply chain", href: "/supply-chain", icon: Truck, ready: false },
   { label: "Kontrahenci", href: "/kontrahenci", icon: Users, ready: true },
-  { label: "Grupy", href: "/grupy", icon: UsersRound, ready: true },
+  { label: "Grupy", href: "/grupy", icon: UsersRound, ready: true, adminOnly: true },
   { label: "Lokalizacja dostępy", href: "/lokalizacje", icon: MapPin, ready: true },
   { label: "Dostępy", href: "/dostepy", icon: KeyRound, ready: true },
   { label: "Raporty", href: "/raporty", icon: BarChart3, ready: true },
   { label: "Mailing", href: "/mailing", icon: Mail, ready: true },
 ];
+
+/** Pozycje menu widoczne dla danej osoby — ekrany administracyjne tylko dla administratora. */
+export function navItemsFor(isAdmin: boolean): NavItem[] {
+  return NAV_ITEMS.filter((item) => isAdmin || !item.adminOnly);
+}

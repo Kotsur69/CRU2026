@@ -1,19 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "@/lib/nav";
+import { navItemsFor } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 export function MainNav() {
   const pathname = usePathname();
+  // Do czasu wczytania sesji menu jest takie jak dla zwykłego użytkownika — ekran
+  // administracyjny nigdy nie mignie osobie, która go nie otworzy.
+  const { data: session } = useSession();
+  const items = navItemsFor(session?.user?.role === "admin");
 
   return (
     <nav
       aria-label="Szybka nawigacja"
       className="sticky top-0 flex w-14 shrink-0 flex-col items-center gap-1 border-r bg-muted/40 py-3"
     >
-      {NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         const active = pathname.startsWith(item.href);
         const Icon = item.icon;
 

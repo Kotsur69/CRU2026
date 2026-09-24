@@ -2,7 +2,7 @@
 id: 21
 title: Grupy
 group: D-supporting
-status: todo
+status: in-progress
 depends-on: [03, 04]
 legacy-tables: [group, users_groups, users_groups_history, opiniontypes]
 prisma-models: [Group, UserGroup, UserGroupHistory, OpinionType, Businessline, User]
@@ -257,3 +257,88 @@ Manual checks:
    Recommend membership editing only.
 4. **Q1 carries over** — with 451 of 452 users as placeholders (spec 04), every
    member list currently reads `legacy-50463`.
+
+## Implementation notes (2026-09-24)
+
+**Status: in progress.** Everything in this spec is built except the links from
+opinion types to the worklist, whose target screen does not exist yet. The final
+code (rebased onto `aabbad6`, with the review fixes) passed `tsc` and `vitest` only;
+the build, smoke test and browser checks ran on the version before the rebase.
+
+Done:
+
+- **`/grupy`:** `requireAdmin`, so non-admins get a 404. `FilterBar` with "Nazwa" and
+  **"pokaż nieaktywne"**: inactive groups are hidden by default and the counter says
+  how many are hidden. Columns Nazwa · Aktywna · Właściciel · **Buissnesline** ·
+  Członkowie · Rodzaje opinii. No pagination, so no "Na stronie".
+- **`/grupy/[id]`:** `requireAdmin` runs before the id is parsed, so the page reveals
+  nothing about which ids exist. Sections:
+  - Dane, with "Edytuj" (name ≤ 50, active, owner, buissnesline).
+  - Rodzaje opinii.
+  - Członkowie: links to `/dostepy/[id]`, "Dodaj członka", "usuń" with a confirm.
+  - **Byli członkowie**: people removed here, with date and author, then the
+    imported rows under **"legacy — brak dat"**. These are listed alphabetically,
+    never by id, because the id order says nothing about time.
+  - Historia zmian składu: every add and remove, with date and author.
+- **Writes** (`features/grupy/actions.ts`): `addMember`, `removeMember` and
+  `updateGroup`. Each one calls `requireAdmin` itself.
+  - A membership change and its history row are written in one transaction, with
+    the group row locked (`FOR UPDATE`).
+  - Insert and delete are conditional, so a repeated click writes nothing.
+  - Nothing ever deletes history.
+- **Schema:** `UserGroupHistory.changedAt`, `changedById` and `action` (enum
+  `GroupMembershipAction`, ADDED/REMOVED). All three are nullable with **no
+  default**, so the 391 imported rows keep null and never get a date. Migration
+  `20260924121000_group_history_audit`.
+- **Nav:** `NavItem.adminOnly` and `navItemsFor(isAdmin)`. "Grupy" is hidden from
+  non-admins in the top bar and the side nav.
+- **Decisions:**
+  - Q62: as recommended, membership editing only. No group creation or deletion.
+  - An **inactive group has a frozen membership**, in the UI and on the server. To
+    change it, activate the group first. This is how the quirk "removing
+    memberships would destroy the only record" was read.
+  - Group edits keep no history: legacy has none, and no table exists for them.
+  - Groups 12 and 13 were already flagged in spec 26 ("The one substantive clue").
+- **Verified on the fixture plus synthetic rows:**
+  - A 343-member group renders in about 0.1 s.
+  - An inactive group 7 with 9 members, and undated legacy rows, display correctly.
+  - Playwright: add, remove (confirm dismissed and accepted), edit with validation,
+    and focus handling.
+  - Membership forms posted by a non-admin, with JS or without, write nothing.
+
+Not done:
+
+- Opinion types are shown as plain text. The `/opinie?type=N` links are not built:
+  that screen does not exist, and a comment in `grupy/[id]/page.tsx` marks where
+  the links go.
+- "Lokalizacja dostępy" is still in the nav for non-admins, although spec 22 now
+  answers them with 404.
+- Build, smoke test and Playwright were not re-run on the final commit.
+- The verification SQL was not run against real data, because there is no dump. On
+  the fixture, check 4 (orphans) returns 0 | 0.
+
+Blocked:
+
+- **Worklist links:** blocked on spec 16's `/opinie`, which waits for **Q20**.
+- **Real names in member lists:** blocked on **Q1** (spec 04). Every placeholder reads
+  `legacy-<id>`.
+- **Q60**, whether "Tylko do odczytu" and group 7 are enforced roles: recorded here,
+  nothing is enforced. It belongs to spec 03, which is itself blocked on Q18.
+- **Q61**, what groups 12 and 13 are for: both are displayed and nothing reads them.
+
+Next steps:
+
+1. Re-run `npx next build`, the smoke test and the browser flows on the merged branch.
+2. When `/opinie` ships, link each opinion type to `/opinie?type=N`.
+3. Set `adminOnly: true` on "Lokalizacja dostępy" now, and on "Dostępy" once spec 23
+   gates it.
+4. Spec 23:
+   - Gate `/dostepy`. It still shows every user's groups to anyone, and its links
+     to `/grupy` now return 404 to non-admins.
+   - Admin rights come from the JWT and are fixed at login.
+   - `UserGroupHistory.user` cascades on delete.
+5. Spec 24: the Raporty "Supply chain" card links to `/grupy` for everyone and
+   matches groups by name, so a rename made here changes that card. Match by id, as
+   spec 26 asks.
+6. `db:import`: `UserGroupHistory` has no natural key, so a re-run appends the 391
+   rows again. Skip the load when rows with `action IS NULL` already exist.
