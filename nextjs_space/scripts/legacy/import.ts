@@ -889,6 +889,8 @@ async function main(): Promise<void> {
           signed: asBool(r.signature) ?? false,
           // Misnamed in legacy: `sign_date` is when the opinion was answered.
           respondedAt: asDateTime(r.sign_date),
+          // Legacy never recorded when a request was made — null, not the import time.
+          requestedAt: null,
           active: asBool(r.active) ?? true,
           noMdr: asBool(r.nomdr) ?? false,
           formVerified: asBool(r.form_ver) ?? false,

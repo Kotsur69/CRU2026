@@ -18,6 +18,7 @@ import { partitionRelations } from "@/lib/contracts/relations";
 import { buttonClass } from "@/components/ui/button";
 import { ContractActions } from "./contract-actions";
 import { NOTES_SHOWN, NotesThread } from "./notes-thread";
+import { OpinionRound } from "./opinion-round";
 
 /**
  * Podgląd rekordu `contract` — jeden ekran dla Umów, Projektów i Działu ryzyka
@@ -138,8 +139,8 @@ export async function ContractPreview({
       },
       attachments: { orderBy: [{ isFinal: "desc" }, { id: "asc" }] },
       userAccess: { orderBy: { readOnly: "asc" }, include: { user: { select: PERSON } } },
+      // Wszystkie prośby, także wycofane — sekcja obiegu chowa je pod „pokaż wycofane".
       opinions: {
-        where: { active: true },
         orderBy: { id: "asc" },
         include: { opinionType: true, user: { select: PERSON } },
       },
@@ -173,7 +174,9 @@ export async function ContractPreview({
   const owners = c.userAccess.map((a) => userLabel(a.user));
   const editors = c.userAccess.filter((a) => !a.readOnly).map((a) => userLabel(a.user));
   const reviewers = Array.from(
-    new Set(c.opinions.map((o) => (o.user ? userLabel(o.user) : null)).filter(Boolean)),
+    new Set(
+      c.opinions.filter((o) => o.active).map((o) => (o.user ? userLabel(o.user) : null)).filter(Boolean),
+    ),
   ) as string[];
   // The primary location FK and the many-to-many table are both populated in legacy.
   const locations = Array.from(
@@ -538,50 +541,32 @@ export async function ContractPreview({
         {/* Uwaga: funkcja „wyślij jako załącznik" świadomie POMINIĘTA (wykluczenie w README). */}
       </Section>
 
-      {/* Obieg FAU — opinie zaimportowane z legacy `opinions` */}
+      {/* Obieg FAU (docs/features/16) — z akcjami na projektach, tylko do odczytu gdzie indziej. */}
       {showOpinions && (
-        <Section title="Obieg FAU (Formularz Akceptacji Umowy)">
-          {c.acceptanceForm && (
-            <dl className="mb-4">
-              <Field label="Procedura MDR">{c.acceptanceForm.mdrProcedure ? "Tak" : "Nie"}</Field>
-              <Field label="Weryfikacja wstępna">
-                {c.acceptanceForm.initialVerification ? "Tak" : "Nie"}
-              </Field>
-              <Field label="Formularz wysłany">{c.acceptanceForm.formSent ? "Tak" : "Nie"}</Field>
-              <Field label="Akceptacja właściciela">
-                {c.acceptanceForm.ownerAccepted
-                  ? `Tak · ${formatDateTime(c.acceptanceForm.ownerAcceptedAt)}`
-                  : "Nie"}
-              </Field>
-            </dl>
-          )}
-
-          {/* Stan wynika z wpisów, nie z flagi `opinionsRequested` — ta mówi tylko, kto
-              otworzył obieg (docs/features/16). */}
-          {c.opinions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Brak opinii w obiegu.
-              {c.opinionsRequestedBy && ` Obieg otworzył(a): ${userLabel(c.opinionsRequestedBy)}.`}
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {c.opinions.map((o) => (
-                <li key={o.id} className="border-b border-border/60 pb-3 last:border-0 last:pb-0">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>{o.opinionType?.name ?? "—"}</span>
-                    <span>·</span>
-                    <span>{o.user ? userLabel(o.user) : "—"}</span>
-                    {/* `signed` jest 0 na wszystkich rekordach legacy — stan wynika z daty odpowiedzi. */}
-                    <Badge tone={o.respondedAt ? "success" : "warning"}>
-                      {o.respondedAt ? `Zaopiniowano ${formatDate(o.respondedAt)}` : "Oczekuje"}
-                    </Badge>
-                  </div>
-                  {o.description && <p className="mt-1 whitespace-pre-line text-sm">{o.description}</p>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
+        <OpinionRound
+          recordId={c.id}
+          opinions={c.opinions}
+          coordinator={c.opinionsRequestedBy}
+          actor={actor}
+          canEdit={canEdit}
+          readOnly={!isProject}
+          acceptanceForm={
+            c.acceptanceForm && (
+              <dl className="mb-4">
+                <Field label="Procedura MDR">{c.acceptanceForm.mdrProcedure ? "Tak" : "Nie"}</Field>
+                <Field label="Weryfikacja wstępna">
+                  {c.acceptanceForm.initialVerification ? "Tak" : "Nie"}
+                </Field>
+                <Field label="Formularz wysłany">{c.acceptanceForm.formSent ? "Tak" : "Nie"}</Field>
+                <Field label="Akceptacja właściciela">
+                  {c.acceptanceForm.ownerAccepted
+                    ? `Tak · ${formatDateTime(c.acceptanceForm.ownerAcceptedAt)}`
+                    : "Nie"}
+                </Field>
+              </dl>
+            )
+          }
+        />
       )}
 
       {/* Audyt — legacy podaje znacznik czasu co do sekundy i LOGIN autora (audyt §1.4). */}

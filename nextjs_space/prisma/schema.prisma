@@ -580,6 +580,10 @@ model Opinion {
   signed      Boolean   @default(false)
   /// Legacy `sign_date` — misnamed there: it is when the opinion was answered.
   respondedAt DateTime?
+  /// When the request was made. Legacy has no such column, so the 16 531 imported rows
+  /// stay null and ageing for them can only start at the record's registration
+  /// (docs/features/16). Rows created in this application get the timestamp.
+  requestedAt DateTime? @default(now())
   active      Boolean   @default(true)
 
   /// Legacy flags on the opinion round.

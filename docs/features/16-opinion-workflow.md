@@ -2,7 +2,7 @@
 id: 16
 title: Obieg opinii (FAU workflow)
 group: C-missing-subsystems
-status: todo
+status: in-progress
 depends-on: [01, 15]
 legacy-tables: [opinions, opiniontypes, group, users_groups]
 prisma-models: [Opinion, OpinionType, Group, UserGroup, Contract, ContractStatus]
@@ -697,3 +697,43 @@ Manual checks:
    the integration's trigger and this needs re-reading.
 5. **Q17/Q5 carry over** — the notification recipient rule (spec 15) decides whether
    a request notification reaches the right person or all sixteen admins.
+
+## Implementation notes (2026-09-24)
+
+**Status: in progress.** The round on the record is built. **`/opinie` ("Zaległe
+opinie"), its home-page tile and the nav entry are not**: Q20 says a decision is
+needed *before `/opinie` ships* (whether closing a record should close its open
+requests — 2,891 of them). The pieces it needs are ready: `requestedAt` for ageing
+and `lib/opinions.ts`. Q19 (who may start a round) is taken at its proposal,
+`canEditContract`. That is also what the edit form's "Opiniujący" field has always
+required, so nobody gains or loses the ability.
+
+Built:
+
+- **Schema:** `Opinion.requestedAt DateTime? @default(now())`
+  (`20260924120000_opinion_requested_at`). The column is added *without* a default
+  first, so the imported rows keep null — no fabricated request date. The importer
+  writes `requestedAt: null` explicitly.
+- **Section** (`features/kontrakty/opinion-round.tsx`): coordinator
+  (`opinionsRequestedBy`, spec 01), "Zaopiniowano X z Y" (active requests only),
+  requests in type order and then answered-first, "(bez uwag)" for bare approvals,
+  withdrawn requests behind "pokaż wycofane (N)", and the empty state
+  "Nie rozpoczęto obiegu opinii.". Full on projects, read-only on contracts that
+  have rows, absent on risk. The acceptance-form block stays at the top, as before.
+- **Ask panel** (a client island): type select, a searchable person list with the
+  type's group members under "Sugerowani" (a hint, never a constraint), a duplicate
+  warning that does not block, and "Nie powiadamiaj" writing `mailingDisabled`.
+  Only active accounts can be asked. Today that excludes the 451 placeholders,
+  which cannot log in to answer anyway (Q1).
+- **Actions** (`opinion-actions.ts`): `requestOpinion` (editor; one row per person,
+  1–20; the first request on a record without a coordinator makes the actor the
+  coordinator and logs `giveopinions` in legacy's id format), `answerOpinion`
+  (assignee or admin; active and unanswered; ≤ 4,000 characters; "Zaopiniuj" /
+  "Zaopiniuj bez uwag") and `withdrawOpinion` (coordinator, editor or admin;
+  `active = false`, never deleted).
+- **Notifications** go through spec 15's helper to exactly the people concerned: a
+  request to the askees (unless "Nie powiadamiaj"), an answer to the coordinator
+  (`sendInfo && !mailingDisabled`). Legacy has no notification without a note, so
+  each leaves a one-line note on the record, as "poproś o formularz" already does.
+  No mail is sent.
+- The "Opiniujący" register column (active only, pending muted) was done in spec 07.
