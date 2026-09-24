@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { userLabel } from "@/lib/format";
 import { requireActor, assertCanEditContract, canAskQuestion, type Actor } from "@/lib/authz";
 import { NOTE_MAX_LENGTH } from "@/lib/contracts/notes";
+import { notifyAboutRemark } from "@/lib/notifications";
 import {
   contractFormSchema,
   flattenIssues,
@@ -525,28 +526,15 @@ export async function deleteContract(formData: FormData): Promise<void> {
 }
 
 /**
- * Notatka na rekordzie i powiadomienie jego właścicieli — jeden obieg dla „dodaj
- * notatkę" i „zadaj pytanie": `remarks` + `shoutbox` + `shoutboxusers`. Kogo
- * powiadamiamy, ustali docs/features/15 (Q5); na razie właścicieli rekordu bez autora.
+ * Notatka na rekordzie i powiadomienie o niej — jeden obieg dla „dodaj notatkę" i
+ * „zadaj pytanie": `remarks` + `shoutbox` + `shoutboxusers`. Kogo powiadamiamy,
+ * rozstrzyga `lib/notifications.ts` (docs/features/15).
  */
-async function writeNote(
-  tx: Tx,
-  contractId: number,
-  author: Actor,
-  body: string,
-  recipients: readonly number[],
-): Promise<void> {
+async function writeNote(tx: Tx, contractId: number, author: Actor, body: string): Promise<void> {
   const remark = await tx.remark.create({
     data: { contractId, userId: author.id, body, active: true },
   });
-  if (recipients.length === 0) return;
-  const template = await tx.messageTemplate.findFirst({ orderBy: { id: "asc" } });
-  const shout = await tx.shoutbox.create({
-    data: { contractId, remarkId: remark.id, messageId: template?.id ?? null },
-  });
-  await tx.shoutboxRecipient.createMany({
-    data: recipients.map((userId) => ({ shoutboxId: shout.id, userId, isRead: false })),
-  });
+  await notifyAboutRemark(tx, { remarkId: remark.id, contractId, authorId: author.id });
 }
 
 /**
@@ -558,7 +546,7 @@ async function noteTarget(actor: Actor, id: number) {
   if (!canAskQuestion(actor)) return null;
   const contract = await prisma.contract.findUnique({
     where: { id },
-    select: { isDeleted: true, module: true, userAccess: { select: { userId: true } } },
+    select: { isDeleted: true, module: true },
   });
   return contract && !contract.isDeleted ? contract : null;
 }
@@ -590,8 +578,7 @@ export async function addNote(state: NoteState, formData: FormData): Promise<Not
   const contract = await noteTarget(actor, id);
   if (!contract) return { error: "Rekord nie istnieje." };
 
-  const recipients = contract.userAccess.map((a) => a.userId).filter((uid) => uid !== actor.id);
-  await prisma.$transaction((tx) => writeNote(tx, id, actor, parsed.body, recipients));
+  await prisma.$transaction((tx) => writeNote(tx, id, actor, parsed.body));
 
   const path = modulePath(contract.module);
   revalidatePath(`${path}/${id}`);
@@ -617,8 +604,7 @@ export async function askQuestion(formData: FormData): Promise<void> {
   const contract = await noteTarget(actor, id);
   if (!contract) throw new Error("Rekord nie istnieje.");
 
-  const recipients = contract.userAccess.map((a) => a.userId).filter((uid) => uid !== actor.id);
-  await prisma.$transaction((tx) => writeNote(tx, id, actor, `Pytanie: ${parsed.body}`, recipients));
+  await prisma.$transaction((tx) => writeNote(tx, id, actor, `Pytanie: ${parsed.body}`));
 
   revalidatePath(`${modulePath(contract.module)}/${id}`);
 }
@@ -657,8 +643,6 @@ export async function requestAcceptanceForm(
     return { ok: false, error: "Brak uprawnień do tego rekordu." };
   }
 
-  const template = await prisma.messageTemplate.findFirst({ orderBy: { id: "asc" } });
-
   await prisma.$transaction(async (tx) => {
     const remark = await tx.remark.create({
       data: {
@@ -668,11 +652,12 @@ export async function requestAcceptanceForm(
         active: true,
       },
     });
-    const shout = await tx.shoutbox.create({
-      data: { contractId, remarkId: remark.id, messageId: template?.id ?? null },
-    });
-    await tx.shoutboxRecipient.create({
-      data: { shoutboxId: shout.id, userId: target.id, isRead: false },
+    // Prośba jest do jednej, wskazanej osoby — nie do właścicieli rekordu.
+    await notifyAboutRemark(tx, {
+      remarkId: remark.id,
+      contractId,
+      authorId: actor.id,
+      recipients: [target.id],
     });
   });
 

@@ -6,6 +6,7 @@ import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { NAV_ITEMS } from "@/lib/nav";
+import { NotificationBell } from "./notification-bell";
 import { cn } from "@/lib/utils";
 
 const LOCALES = ["pl", "en"] as const;
@@ -59,6 +60,7 @@ export function Topbar() {
           <Suspense fallback={<div className="h-7 w-16" aria-hidden />}>
             <LangSwitch />
           </Suspense>
+          {session && <NotificationBell />}
           {session?.user?.name && (
             <span className="hidden text-sm text-white/80 sm:inline">
               {session.user.name}

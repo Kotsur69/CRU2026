@@ -651,12 +651,14 @@ model Shoutbox {
 
 /// Legacy `shoutboxusers`.
 model ShoutboxRecipient {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   shoutboxId Int
-  shoutbox   Shoutbox @relation(fields: [shoutboxId], references: [id], onDelete: Cascade)
+  shoutbox   Shoutbox  @relation(fields: [shoutboxId], references: [id], onDelete: Cascade)
   userId     Int?
-  user       User?    @relation(fields: [userId], references: [id])
-  isRead     Boolean  @default(false) // legacy `readed`
+  user       User?     @relation(fields: [userId], references: [id])
+  isRead     Boolean   @default(false) // legacy `readed` — 1 means READ (cru.sql:447516)
+  /// When the recipient marked it read. Legacy kept no timestamp, so historical rows stay null.
+  readAt     DateTime?
 
   @@index([userId, isRead])
   @@index([shoutboxId])

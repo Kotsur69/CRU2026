@@ -2,7 +2,7 @@
 id: 15
 title: Powiadomienia (in-app inbox)
 group: C-missing-subsystems
-status: todo
+status: in-progress
 depends-on: [14]
 legacy-tables: [shoutbox, shoutboxusers, shoutboxview, message, admins]
 prisma-models: [Shoutbox, ShoutboxRecipient, MessageTemplate]
@@ -323,3 +323,35 @@ Manual checks:
 4. **E-mail.** Legacy sends none from here, and neither do we (`actions.ts:464-468`
    says so explicitly). Spec 29 introduces SMTP; at that point notifications become a
    candidate for e-mail delivery, which changes the noise calculus considerably.
+
+## Implementation notes (2026-09-24)
+
+**Status: in progress.** The inbox is built. **Recipient selection is not changed**:
+the quirk "notifications go to all administrators" is marked "REQUIRED — behaviour
+change" (Q5). Every writer now goes through one helper,
+`lib/notifications.ts` → `notifyAboutRemark`, which keeps this application's
+existing rule: the record's owners minus the note's author (legacy's trigger went to
+all administrators). Once Q5 is decided, only `defaultRecipients` changes — for
+example adding active reviewers and an admin opt-in.
+
+Built:
+
+- **Schema:** `ShoutboxRecipient.readAt DateTime?` (migration
+  `20260924110000_notification_read_at`). Historical rows stay null.
+- **`/powiadomienia`:** "Nieprzeczytane" (default, legacy's only view) and
+  "Wszystkie", newest first by the note's date, 150-character excerpts, an unread
+  dot and weight, own notes muted "(Ty)", read time shown in the archive, 25 per
+  page, "Brak nowych powiadomień.". A notification whose contract was soft-deleted
+  renders the tombstone "umowa usunięta" instead of disappearing; a missing note
+  renders "notatka usunięta".
+- **Actions:** `markRead`, `markAllRead` (own rows only; someone else's id is a 404).
+  Opening a notification goes through `GET /powiadomienia/[id]`: it marks the row
+  read and redirects to `…/[id]#notatki`. A route handler rather than a server
+  action because only an HTTP redirect keeps the anchor. The inbox links to it with
+  a plain `<a>`, so prefetch never marks anything read.
+- **Bell:** `components/layout/notification-bell.tsx` in the topbar, showing the
+  unread count ("99+" cap). It refreshes on every navigation through
+  `/api/powiadomienia/licznik`, with no background polling.
+- `askQuestion`, "dodaj notatkę" (spec 14) and `requestAcceptanceForm` all use the
+  helper. The acceptance-form request passes its single, named recipient.
+- **Open question 2** (the 750 historical unread): left alone, as recommended.
