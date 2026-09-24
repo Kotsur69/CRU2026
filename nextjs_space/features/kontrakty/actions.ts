@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import type { ContractStatusKind, Prisma } from "@prisma/client";
+import type { ContractModule, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { userLabel } from "@/lib/format";
 import { requireActor, assertCanEditContract, type Actor } from "@/lib/authz";
@@ -26,6 +26,13 @@ import {
   loadContractForForm,
 } from "@/lib/contracts/record";
 import { nextAnnexIdentifier, nextRecordIdentifier } from "@/lib/contracts/identifier";
+import {
+  isRegisterModule,
+  MODULE_PATH,
+  modulePath,
+  registerOf,
+  type RegisterModule,
+} from "@/lib/contracts/modules";
 
 /**
  * Zapis rekordu umowy / projektu.
@@ -42,15 +49,12 @@ import { nextAnnexIdentifier, nextRecordIdentifier } from "@/lib/contracts/ident
 export type SaveMode = "create" | "edit" | "annex" | "annex-project";
 
 const MODES: readonly SaveMode[] = ["create", "edit", "annex", "annex-project"];
-const KINDS: readonly ContractStatusKind[] = ["CONTRACT", "PROJECT", "RISK"];
 
 export interface SaveContractState {
   errors: ContractFormErrors;
   /** Wartości do ponownego wypełnienia formularza po odrzuceniu zapisu. */
   values?: Record<string, unknown>;
 }
-
-const MODULE_PATH = { CONTRACT: "/umowy", PROJECT: "/projekty", RISK: "/ryzyko" } as const;
 
 /** Odczyt pól formularza — `FormData` zawsze daje tekst, resztę robi schemat. */
 function readForm(formData: FormData) {
@@ -129,8 +133,41 @@ function contractData(values: ContractFormValues) {
     insuranceGuarantee: values.insuranceGuarantee,
     bill: values.bill,
     remarks: values.remarks,
-    opinionsRequested: values.reviewerIds.length > 0,
   };
+}
+
+interface OpinionRound {
+  opinionsRequested: boolean;
+  opinionsRequestedById: number | null;
+}
+
+/**
+ * Legacy `giveopinions` to nie flaga, tylko id osoby, która otworzyła obieg opinii
+ * (docs/features/01, 16). Ruszamy go wyłącznie zmianą listy opiniujących: wskazanie
+ * pierwszego opiniującego otwiera obieg z zapisującym jako koordynatorem, usunięcie
+ * ostatniego go zamyka. Edycja, która listy nie zmienia, zostawia obieg bez zmian —
+ * około 10 000 rekordów legacy ma otwarty obieg bez ani jednego wpisu w `opinions`
+ * i zapis innego pola nie może im go zamknąć.
+ */
+function opinionRound(
+  reviewerIds: readonly number[],
+  actor: Actor,
+  current: (OpinionRound & { opinions: readonly unknown[] }) | null,
+): OpinionRound {
+  const now: OpinionRound = {
+    opinionsRequested: current?.opinionsRequested ?? false,
+    opinionsRequestedById: current?.opinionsRequestedById ?? null,
+  };
+  const hadReviewers = (current?.opinions.length ?? 0) > 0;
+  const hasReviewers = reviewerIds.length > 0;
+
+  if (hasReviewers && !now.opinionsRequested) {
+    return { opinionsRequested: true, opinionsRequestedById: actor.id };
+  }
+  if (!hasReviewers && hadReviewers) {
+    return { opinionsRequested: false, opinionsRequestedById: null };
+  }
+  return now;
 }
 
 export async function saveContract(
@@ -160,8 +197,8 @@ export async function saveContract(
   if (mode === "create") {
     // Rejestr przychodzi z formularza, więc jest niezaufany — musi być jedną z trzech
     // wartości enuma, a wybrany status musi do niego pasować (sprawdzenie niżej).
-    const registerKind = String(formData.get("registerKind") ?? "") as ContractStatusKind;
-    if (!KINDS.includes(registerKind)) {
+    const registerKind = String(formData.get("registerKind") ?? "");
+    if (!isRegisterModule(registerKind)) {
       return { errors: { _form: "Nieprawidłowy rejestr." } };
     }
     return createRecord(actor, values, raw, registerKind);
@@ -176,14 +213,15 @@ export async function saveContract(
     return { errors: { _form: "Rekord nie istnieje lub został usunięty." } };
   }
 
-  const isProject = mode === "annex-project" ? true : mode === "annex" ? false : base.isProject;
+  const module: ContractModule =
+    mode === "annex-project" ? "PROJECT" : mode === "annex" ? "CONTRACT" : base.module;
 
   // Status musi należeć do tego samego modułu co rekord — inaczej rekord wypadłby
-  // z rejestru, w którym go utworzono (`isProject` i `status.kind` muszą się zgadzać).
+  // z rejestru, w którym go utworzono (`module` i `status.kind` muszą się zgadzać).
   const status = values.statusId
     ? await prisma.contractStatus.findUnique({ where: { id: values.statusId } })
     : null;
-  if (status && mode !== "edit" && (status.kind === "PROJECT") !== isProject) {
+  if (status && mode !== "edit" && status.kind !== registerOf(module)) {
     return {
       errors: { statusId: "Status nie pasuje do rodzaju tworzonego rekordu." },
       values: raw,
@@ -193,7 +231,7 @@ export async function saveContract(
   // Oba stany rekordu trafiają do słowników, żeby historia zapisała nazwę także dla
   // pozycji wygaszonej (np. typ „Kontrakt" na 21 żywych rekordach), a nie samo id.
   const dicts = await loadFormDictionaries(
-    status?.kind ?? (isProject ? "PROJECT" : "CONTRACT"),
+    status?.kind ?? registerOf(module),
     base,
     values,
   );
@@ -203,6 +241,7 @@ export async function saveContract(
   let targetPath: string;
 
   if (mode === "edit") {
+    const round = opinionRound(values.reviewerIds, actor, base);
     const previousNames = await counterpartyLabels(base.contractorId, base.debtorId);
     const before = withOpinionRound(
       withCounterparties(
@@ -210,11 +249,11 @@ export async function saveContract(
         previousNames.contractor,
         previousNames.debtor,
       ),
-      base.opinionsRequested,
+      base.opinionsRequestedById,
     );
     const after = withOpinionRound(
       withCounterparties(buildSnapshot(values, dicts), names.contractor, names.debtor),
-      values.reviewerIds.length > 0,
+      round.opinionsRequestedById,
     );
     const changes = diffSnapshots(before, after);
 
@@ -223,6 +262,7 @@ export async function saveContract(
         where: { id: base.id },
         data: {
           ...contractData(values),
+          ...round,
           identifier: values.identifier,
           modifiedAt: new Date(),
           modifiedById: actor.id,
@@ -239,7 +279,7 @@ export async function saveContract(
     });
 
     targetId = base.id;
-    targetPath = MODULE_PATH[base.status?.kind ?? "CONTRACT"];
+    targetPath = modulePath(base.module);
   } else {
     // Numer proponuje serwer, ale użytkownik może go nadpisać — tak działa legacy
     // (stąd 111 powtórzonych identyfikatorów w dumpie). Powiązanie aneksu z umową
@@ -252,16 +292,17 @@ export async function saveContract(
         : await nextRecordIdentifier({
             companyId: values.companyId,
             businesslineId: values.businesslineId,
-            isProject: true,
+            module: "PROJECT",
           }));
 
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.contract.create({
         data: {
           ...contractData(values),
+          ...opinionRound(values.reviewerIds, actor, null),
           identifier,
           parentId: base.id,
-          isProject,
+          module,
           registeredAt: new Date(),
           registeredById: actor.id,
         },
@@ -273,7 +314,7 @@ export async function saveContract(
     });
 
     targetId = created.id;
-    targetPath = isProject ? "/projekty" : "/umowy";
+    targetPath = modulePath(module);
   }
 
   revalidatePath(`${targetPath}/${targetId}`);
@@ -284,7 +325,7 @@ export async function saveContract(
 
 /**
  * „Dodaj nowy wpis" — rekord bez rodzica, w rejestrze, z którego przyszedł użytkownik.
- * Rejestr decyduje o `isProject` i o tym, jaki status wolno wybrać; niezgodny status
+ * Rejestr decyduje o `module` i o tym, jaki status wolno wybrać; niezgodny status
  * wyrzuciłby rekord z listy, na której go założono.
  *
  * Twórca wchodzi na listę właścicieli z prawem edycji. Formularz nowego wpisu w legacy
@@ -295,10 +336,8 @@ async function createRecord(
   actor: Actor,
   values: ContractFormValues,
   raw: Record<string, unknown>,
-  registerKind: ContractStatusKind,
+  registerKind: RegisterModule,
 ): Promise<SaveContractState> {
-  const isProject = registerKind === "PROJECT";
-
   const status = values.statusId
     ? await prisma.contractStatus.findUnique({ where: { id: values.statusId } })
     : null;
@@ -313,7 +352,7 @@ async function createRecord(
     (await nextRecordIdentifier({
       companyId: values.companyId,
       businesslineId: values.businesslineId,
-      isProject,
+      module: registerKind,
     }));
 
   const withCreator: ContractFormValues = {
@@ -328,8 +367,9 @@ async function createRecord(
     const row = await tx.contract.create({
       data: {
         ...contractData(values),
+        ...opinionRound(values.reviewerIds, actor, null),
         identifier,
-        isProject,
+        module: registerKind,
         registeredAt: new Date(),
         registeredById: actor.id,
       },
@@ -434,10 +474,7 @@ export async function deleteContract(formData: FormData): Promise<void> {
 
   await assertCanEditContract(actor, id);
 
-  const record = await prisma.contract.findUnique({
-    where: { id },
-    select: { status: { select: { kind: true } } },
-  });
+  const record = await prisma.contract.findUnique({ where: { id }, select: { module: true } });
 
   await prisma.$transaction([
     prisma.contract.update({
@@ -455,7 +492,7 @@ export async function deleteContract(formData: FormData): Promise<void> {
     }),
   ]);
 
-  const path = MODULE_PATH[record?.status?.kind ?? "CONTRACT"];
+  const path = modulePath(record?.module ?? "CONTRACT");
   revalidatePath(path);
   redirect(path);
 }
@@ -477,7 +514,7 @@ export async function askQuestion(formData: FormData): Promise<void> {
     where: { id },
     select: {
       isDeleted: true,
-      status: { select: { kind: true } },
+      module: true,
       userAccess: { select: { userId: true } },
     },
   });
@@ -499,7 +536,7 @@ export async function askQuestion(formData: FormData): Promise<void> {
     });
   });
 
-  revalidatePath(`${MODULE_PATH[contract.status?.kind ?? "CONTRACT"]}/${id}`);
+  revalidatePath(`${modulePath(contract.module)}/${id}`);
 }
 
 /**
@@ -520,7 +557,7 @@ export async function requestAcceptanceForm(
   const [contract, target] = await Promise.all([
     prisma.contract.findUnique({
       where: { id: contractId },
-      select: { isDeleted: true, identifier: true, status: { select: { kind: true } } },
+      select: { isDeleted: true, identifier: true, module: true },
     }),
     prisma.user.findUnique({
       where: { id: userId },
@@ -555,7 +592,7 @@ export async function requestAcceptanceForm(
     });
   });
 
-  revalidatePath(`${MODULE_PATH[contract.status?.kind ?? "CONTRACT"]}/${contractId}`);
+  revalidatePath(`${modulePath(contract.module)}/${contractId}`);
   return { ok: true };
 }
 
@@ -586,9 +623,6 @@ export async function saveAcceptanceForm(formData: FormData): Promise<void> {
     update: data,
   });
 
-  const record = await prisma.contract.findUnique({
-    where: { id },
-    select: { status: { select: { kind: true } } },
-  });
-  revalidatePath(`${MODULE_PATH[record?.status?.kind ?? "CONTRACT"]}/${id}`);
+  const record = await prisma.contract.findUnique({ where: { id }, select: { module: true } });
+  revalidatePath(`${modulePath(record?.module ?? "CONTRACT")}/${id}`);
 }

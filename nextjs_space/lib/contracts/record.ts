@@ -25,9 +25,9 @@ export const CONTRACT_FORM_INCLUDE = {
   debtor: { select: { id: true, shortName: true, fullName: true, vatId: true } },
   status: { select: { id: true, kind: true } },
   // Umowa nadrzędna — formularz pokazuje ją odnośnikiem („Aneks do umowy" w legacy).
-  // Jej rejestr wynika z jej własnego statusu: projekt aneksu wisi pod umową, więc
+  // Jej rejestr wynika z jej własnego modułu: projekt aneksu wisi pod umową, więc
   // odnośnik prowadzi do /umowy, a nie do rejestru, w którym stoi rekord potomny.
-  parent: { select: { id: true, identifier: true, status: { select: { kind: true } } } },
+  parent: { select: { id: true, identifier: true, module: true } },
 } as const;
 
 export type ContractForForm = NonNullable<Awaited<ReturnType<typeof loadContractForForm>>>;

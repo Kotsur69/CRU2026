@@ -99,9 +99,15 @@ export function withCounterparties(
   };
 }
 
-/** `giveopinions` — otwarcie rundy opiniowania jest osobnym wpisem w historii. */
-export function withOpinionRound(snapshot: HistorySnapshot, requested: boolean): HistorySnapshot {
-  return { ...snapshot, giveopinions: flag(requested) };
+/**
+ * `giveopinions` — otwarcie rundy opiniowania jest osobnym wpisem w historii. Legacy
+ * zapisuje tam surowe id koordynatora, a `0` dla braku (`0` → `50463`), więc tak samo.
+ */
+export function withOpinionRound(
+  snapshot: HistorySnapshot,
+  requestedById: number | null,
+): HistorySnapshot {
+  return { ...snapshot, giveopinions: String(requestedById ?? 0) };
 }
 
 export function diffSnapshots(before: HistorySnapshot, after: HistorySnapshot): HistoryRow[] {

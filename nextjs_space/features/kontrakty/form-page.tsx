@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { notFound, redirect } from "next/navigation";
-import type { ContractStatusKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { contractorLabel } from "@/lib/format";
 import { currentActor, canEditContract } from "@/lib/authz";
@@ -17,6 +16,7 @@ import {
   loadContractForForm,
 } from "@/lib/contracts/record";
 import { nextAnnexIdentifier } from "@/lib/contracts/identifier";
+import { modulePath, registerOf, type RegisterModule } from "@/lib/contracts/modules";
 import { ContractForm } from "./contract-form";
 import type { SaveMode } from "./actions";
 
@@ -26,8 +26,6 @@ import type { SaveMode } from "./actions";
  * tym, co jest wpisane na starcie i jak nazwany jest ekran — sam formularz jest ten
  * sam, tak jak w legacy.
  */
-
-const MODULE_PATH = { CONTRACT: "/umowy", PROJECT: "/projekty", RISK: "/ryzyko" } as const;
 
 const ANNEX_TYPE = "Aneks";
 const NEW_ANNEX_STATUS = "Obowiązująca";
@@ -55,9 +53,12 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
   // Prawo edycji rekordu wyjściowego jest warunkiem i edycji, i tworzenia jego aneksu.
   if (!(await canEditContract(actor, id))) redirect(`${basePath}/${id}`);
 
-  const isProject = mode === "annex-project" ? true : mode === "annex" ? false : record.isProject;
-  const kind =
-    mode === "edit" ? (record.status?.kind ?? "CONTRACT") : isProject ? "PROJECT" : "CONTRACT";
+  const kind: RegisterModule =
+    mode === "edit"
+      ? (record.status?.kind ?? registerOf(record.module))
+      : mode === "annex-project"
+        ? "PROJECT"
+        : "CONTRACT";
 
   const [dicts, annexType, defaultStatus, attachments] = await Promise.all([
     // Rekord niesie swoje wartości do list, żeby pozycja wygaszona (np. typ „Kontrakt")
@@ -101,7 +102,7 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
       ? record.parent
         ? {
             identifier: record.parent.identifier ?? `#${record.parent.id}`,
-            href: `${MODULE_PATH[record.parent.status?.kind ?? "CONTRACT"]}/${record.parent.id}`,
+            href: `${modulePath(record.parent.module)}/${record.parent.id}`,
           }
         : null
       : { identifier: parentLabel, href: `${basePath}/${id}` };
@@ -166,7 +167,7 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
   );
 }
 
-const NEW_RECORD_STATUS: Record<ContractStatusKind, string> = {
+const NEW_RECORD_STATUS: Record<RegisterModule, string> = {
   CONTRACT: NEW_ANNEX_STATUS,
   PROJECT: NEW_PROJECT_STATUS,
   RISK: NEW_RISK_STATUS,
@@ -174,7 +175,7 @@ const NEW_RECORD_STATUS: Record<ContractStatusKind, string> = {
 
 export interface NewRecordPageProps {
   /** Rejestr, z którego kliknięto „Dodaj nowy wpis". */
-  kind: ContractStatusKind;
+  kind: RegisterModule;
   basePath: string;
 }
 

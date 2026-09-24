@@ -2,7 +2,7 @@
 id: 01
 title: Data-model gaps and re-import
 group: A-foundations
-status: todo
+status: done
 depends-on: []
 legacy-tables: [contract, contractor, opinions, attachment, access, companies_connected, project, admins, contract_type]
 prisma-models: [Contract, Contractor, Opinion, Attachment, UserAccessScope, User]
@@ -323,3 +323,34 @@ in a subquery before `ORDER BY` — Postgres rejects expressions in a union's or
 3. **`Attachment.isFinal` nullable.** Making it `Boolean?` is honest about the data
    but every read site gains a null branch. Confirm the UI should show three states
    ("ostateczna" / "nie" / "—") rather than two.
+
+## Implementation notes (2026-09-24)
+
+Built as specified, with the decisions below. Verified on a synthetic dump and a
+fixture database; the real-data queries above still need a run against `cru2026`
+once `cru.sql` is at hand — the dump is not in the repository.
+
+- **Migration** `prisma/migrations/20260924100000_data_model_gaps` is hand-written:
+  Prisma's generated diff would have dropped and re-added the renamed columns
+  (`Opinion.signedAt`, the contractor author ids). It renames instead, derives
+  `module` from `status.kind` (status-less rows fall back to the old boolean), nulls
+  contractor author ids that resolve to no user, and switches the three cascades to
+  `Restrict`. `prisma migrate diff` against the schema is empty.
+- **Restore pass** in `scripts/legacy/import.ts`. `createMany({skipDuplicates})`
+  never touches existing rows, so re-running the import on today's database would
+  not fill the new columns. The pass fills `module` on status-less records,
+  `opinionsRequestedById` where the round is still open, `legacyCruId` and
+  `addedAtEstimated` — only where empty, never over an application write. A second
+  run reports zero changes. No database reset, so 21234/21235 survive.
+- **Q11:** imported as `ContractModule.LEGACY_2021`, as proposed.
+- **`Attachment.isFinal` stays `Boolean`.** Spec 18 (Q29) and the README later
+  settled on "leave it": no legacy row is an explicit 0, so null → false loses
+  nothing. `addedAtEstimated` is added as specified.
+- **Writes.** `opinionsRequestedById` moves only when the reviewer list changes:
+  naming the first reviewer opens the round with the actor as coordinator, removing
+  the last closes it. An unrelated edit leaves it alone. History writes raw user ids
+  to `giveopinions` (`0` → `50463`), as legacy does.
+- **Display.** Opinion state now reads `respondedAt` ("Zaopiniowano {date}" /
+  "Oczekuje"), the rule from spec 16. `signed` is 0 everywhere and is no longer read.
+- **Shared helper.** `lib/contracts/modules.ts` holds `MODULE_PATH`, `modulePath()` and
+  `registerOf()` (spec 05's file, created here to carry the rename).

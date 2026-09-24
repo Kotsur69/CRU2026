@@ -2,7 +2,7 @@
 id: 02
 title: Identifier grammar and numbering
 group: A-foundations
-status: todo
+status: done
 depends-on: [01]
 legacy-tables: [contract, contractview, contract_company, buissnesline, contract_type]
 prisma-models: [Contract, Company, Businessline]
@@ -267,3 +267,24 @@ Manual checks:
 3. **Year source.** `nextRecordIdentifier` defaults to `new Date().getFullYear()`.
    Legacy appears to do the same, but a contract registered in January for the
    previous year's series would need an override. Nobody has asked for one.
+
+## Implementation notes (2026-09-24)
+
+- `lib/contracts/identifier.ts` exports `parseIdentifier` (the spec's interface),
+  `composeIdentifier`, `compareIdentifiers` (year, sequence, annex, all numeric, nulls
+  last), `composePrefix` and `highestAnnex`.
+- `nextRecordIdentifier` is two SQL queries: the newest prefix in the series and the
+  numeric maximum for the year. There is no row cap. The series key is now
+  `{companyId, businesslineId, module}`. Risk records keep numbering in the contract
+  series, as the old code did; the risk grammar belongs to spec 08.
+- **Prefix fallback:** `shortName ?? name`, as specified, plus one addition. The
+  placeholder rows `---` and `(brak danych)` are dropped rather than written into a
+  number, so a first record for `HK POM` + `---` becomes `HK POM/2026/0001`, the
+  shape the data already uses.
+- **Annexes:** 1–3 digits are parsed, 2 are written. Soft-deleted siblings still
+  count toward the maximum (no reuse), and the decision is documented in place.
+- **Tests:** `lib/contracts/identifier.test.ts`, 42 cases, all 18 shapes. Run with
+  `yarn test` (Vitest, the runner spec 33 chooses). Swapping `shortName` for `name`
+  fails a test.
+- **Open questions** were taken at their stated defaults: the pad stays 4 and widens
+  past 9999, the identifier stays editable, and the year is the current one.

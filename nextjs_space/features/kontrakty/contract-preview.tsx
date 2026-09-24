@@ -388,8 +388,9 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
                   <span>{o.opinionType?.name ?? "—"}</span>
                   <span>·</span>
                   <span>{o.user ? userLabel(o.user) : "—"}</span>
-                  <Badge tone={o.signed ? "success" : "warning"}>
-                    {o.signed ? `Podpisano ${formatDate(o.signedAt)}` : "Oczekuje"}
+                  {/* `signed` jest 0 na wszystkich rekordach legacy — stan wynika z daty odpowiedzi. */}
+                  <Badge tone={o.respondedAt ? "success" : "warning"}>
+                    {o.respondedAt ? `Zaopiniowano ${formatDate(o.respondedAt)}` : "Oczekuje"}
                   </Badge>
                 </div>
                 <p className="mt-1 whitespace-pre-line text-sm">{o.description}</p>

@@ -23,6 +23,7 @@ import path from "node:path";
 import {
   PrismaClient,
   type AccessDimension,
+  type ContractModule,
   type ContractStatusKind,
   type DomainKind,
 } from "@prisma/client";
@@ -53,6 +54,12 @@ const prisma = new PrismaClient();
 
 function notNull<T>(value: T | null): value is T {
   return value !== null;
+}
+
+/** A legacy integer reference where `0` means "none" (`giveopinions`, author columns). */
+function asId(value: SqlValue): number | null {
+  const id = asInt(value);
+  return id !== null && id > 0 ? id : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -142,6 +149,23 @@ function statusKind(legacyProject: SqlValue): ContractStatusKind {
   }
 }
 
+/**
+ * Legacy `contract.project` — four values, not a flag (docs/features/01): 0 Umowy,
+ * 1 Projekty, 2 Dział ryzyka, and 3 for the 39 records of an abandoned 2021 experiment.
+ */
+function contractModule(legacyProject: SqlValue): ContractModule {
+  switch (asInt(legacyProject)) {
+    case 1:
+      return "PROJECT";
+    case 2:
+      return "RISK";
+    case 3:
+      return "LEGACY_2021";
+    default:
+      return "CONTRACT";
+  }
+}
+
 function domainKind(legacyType: SqlValue): DomainKind {
   return asInt(legacyType) === 2 ? "RISK" : "GENERAL";
 }
@@ -209,6 +233,80 @@ function dedupePairs(
   }
 
   return pairs;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Restore pass (docs/features/01)
+//
+// The first version of this script collapsed `contract.project` to a boolean, reduced
+// `giveopinions` to a flag and dropped `contractor.cru_id`. `createMany` skips rows that
+// already exist, so on a database loaded by that version the new columns would stay
+// empty. This pass fills them from the dump — and only where the application has not
+// written a value of its own, so re-running it is a no-op and records created or edited
+// since the import keep what they hold.
+// ─────────────────────────────────────────────────────────────────────────
+
+async function restoreLostColumns(
+  contracts: readonly Row[],
+  contractors: readonly Row[],
+  attachments: readonly Row[],
+  userIds: ReadonlySet<number>,
+): Promise<void> {
+  const contractIds: number[] = [];
+  const modules: string[] = [];
+  const requesterContractIds: number[] = [];
+  const requesterIds: number[] = [];
+  for (const r of contracts) {
+    const id = asInt(r.id)!;
+    contractIds.push(id);
+    modules.push(contractModule(r.project));
+    const requester = asId(r.giveopinions);
+    if (requester !== null && userIds.has(requester)) {
+      requesterContractIds.push(id);
+      requesterIds.push(requester);
+    }
+  }
+
+  const contractorIds: number[] = [];
+  const cruIds: number[] = [];
+  for (const r of contractors) {
+    const cruId = asInt(r.cru_id);
+    if (cruId === null) continue;
+    contractorIds.push(asInt(r.id)!);
+    cruIds.push(cruId);
+  }
+
+  const attachmentIds = attachments.map((r) => asInt(r.id)).filter(notNull);
+
+  // A record with a status got its module from the status's kind in the migration, which
+  // is exact. Only status-less records needed the legacy value (projects vs. LEGACY_2021).
+  const module = await prisma.$executeRaw`
+    UPDATE "Contract" AS c SET "module" = v.module::"ContractModule"
+    FROM unnest(${contractIds}::int[], ${modules}::text[]) AS v(id, module)
+    WHERE c."id" = v.id AND c."statusId" IS NULL AND c."module"::text <> v.module`;
+
+  // Only rounds that are still open here: an edit that closed one must not reopen it.
+  const requester = await prisma.$executeRaw`
+    UPDATE "Contract" AS c SET "opinionsRequestedById" = v.requester
+    FROM unnest(${requesterContractIds}::int[], ${requesterIds}::int[]) AS v(id, requester)
+    WHERE c."id" = v.id AND c."opinionsRequested" AND c."opinionsRequestedById" IS NULL`;
+
+  const cruId = await prisma.$executeRaw`
+    UPDATE "Contractor" AS c SET "legacyCruId" = v.cru_id
+    FROM unnest(${contractorIds}::int[], ${cruIds}::int[]) AS v(id, cru_id)
+    WHERE c."id" = v.id AND c."legacyCruId" IS NULL`;
+
+  const estimated = await prisma.$executeRaw`
+    UPDATE "Attachment" SET "addedAtEstimated" = true
+    WHERE "id" = ANY(${attachmentIds}::int[]) AND NOT "addedAtEstimated"`;
+
+  process.stdout.write(
+    "\nRestore pass (rows already present, filled where empty):\n" +
+      `  ${"Contract.module".padEnd(36)}${module}\n` +
+      `  ${"Contract.opinionsRequestedById".padEnd(36)}${requester}\n` +
+      `  ${"Contractor.legacyCruId".padEnd(36)}${cruId}\n` +
+      `  ${"Attachment.addedAtEstimated".padEnd(36)}${estimated}\n`,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -417,6 +515,7 @@ async function main(): Promise<void> {
     noteUser(r.registered_by);
     noteUser(r.modified_by);
     noteUser(r.acceptuser);
+    noteUser(r.giveopinions);
   }
   for (const r of contractors) {
     noteUser(r.registered_by);
@@ -559,6 +658,30 @@ async function main(): Promise<void> {
     dryRun,
   );
 
+  // Legacy `access`: the metamodel behind `useraccess`. `has_many` is `0` on every row
+  // except location, where it names the link table a location grant must also match.
+  await load(
+    "AccessDefinition",
+    rowsOf(tables, "access")
+      .map((r) => {
+        const id = asInt(r.id);
+        const dimension = id === null ? undefined : ACCESS_DIMENSIONS[id];
+        if (id === null || dimension === undefined) return null;
+        const joinTable = asText(r.has_many);
+        return {
+          id,
+          dimension,
+          dictionaryTable: asRequiredText(r.table),
+          labelColumn: asRequiredText(r.column),
+          contractColumn: asRequiredText(r.name),
+          joinTable: joinTable === null || joinTable === "0" ? null : joinTable,
+        };
+      })
+      .filter(notNull),
+    (data) => prisma.accessDefinition.createMany({ data, skipDuplicates: true }),
+    dryRun,
+  );
+
   // ── Contractors ────────────────────────────────────────────────────────
   await load(
     "Contractor",
@@ -570,13 +693,14 @@ async function main(): Promise<void> {
       vatId: asText(r.vat_identification),
       register: asText(r.register),
       cruIdentifier: asText(r.cru_identifier),
+      legacyCruId: asInt(r.cru_id),
       isCeidg: asBool(r.CEIDG) ?? false,
       isConnected: asBool(r.companies_connected) ?? false,
       isDeleted: asBool(r.deleted) ?? false,
       registeredAt: asDateTime(r.registered_on),
-      registeredByLegacyId: asInt(r.registered_by),
+      registeredById: dropped.resolve("contractor.registered_by", asId(r.registered_by), userIds),
       modifiedAt: asDateTime(r.modified_on),
-      modifiedByLegacyId: asInt(r.modified_by),
+      modifiedById: dropped.resolve("contractor.modified_by", asId(r.modified_by), userIds),
     })),
     (data) => prisma.contractor.createMany({ data, skipDuplicates: true }),
     dryRun,
@@ -639,9 +763,16 @@ async function main(): Promise<void> {
         insuranceGuarantee: asBool(r.insurance_guarantee) ?? false,
         obsc: asBool(r.OBSC) ?? false,
         obscDescription: asText(r.descOBSC),
-        opinionsRequested: asBool(r.giveopinions) ?? false,
+        // Who opened the opinion round. The flag follows the legacy value rather than
+        // the resolved id, so an unresolvable requester cannot silently close a round.
+        opinionsRequestedById: dropped.resolve(
+          "contract.giveopinions",
+          asId(r.giveopinions),
+          userIds,
+        ),
+        opinionsRequested: asId(r.giveopinions) !== null,
         isEditable: asBool(r.edittable) ?? true,
-        isProject: asBool(r.project) ?? false,
+        module: contractModule(r.project),
         isDeleted: asBool(r.deleted) ?? false,
         tempForm: asTriBool(r.temp_form),
         bill: asBool(r.bill) ?? false,
@@ -727,10 +858,13 @@ async function main(): Promise<void> {
       storageKey: asText(r.path),
       fileType: asText(r.filetype),
       version: asInt(r.version),
+      // Legacy `finally` is NULL or 1, never 0, so null → false loses nothing (Q29).
       isFinal: asBool(r.finally) ?? false,
       formSession: asText(r.formsession),
       contractId: dropped.resolve("attachment.contract_id", asInt(r.contract_id), contractIds),
       contractorId: dropped.resolve("attachment.contractor_id", asInt(r.contractor_id), contractorIds),
+      // Legacy has no upload date; `addedAt` becomes the import time and says so.
+      addedAtEstimated: true,
     })),
     (data) => prisma.attachment.createMany({ data, skipDuplicates: true }),
     dryRun,
@@ -753,7 +887,8 @@ async function main(): Promise<void> {
           userId: dropped.resolve("opinions.user_id", asInt(r.user_id), userIds),
           description: asRequiredText(r.desc),
           signed: asBool(r.signature) ?? false,
-          signedAt: asDateTime(r.sign_date),
+          // Misnamed in legacy: `sign_date` is when the opinion was answered.
+          respondedAt: asDateTime(r.sign_date),
           active: asBool(r.active) ?? true,
           noMdr: asBool(r.nomdr) ?? false,
           formVerified: asBool(r.form_ver) ?? false,
@@ -861,6 +996,10 @@ async function main(): Promise<void> {
     (data) => prisma.contractHistory.createMany({ data, skipDuplicates: true }),
     dryRun,
   );
+
+  if (!dryRun) {
+    await restoreLostColumns(contracts, contractors, rowsOf(tables, "attachment"), userIds);
+  }
 
   // ── Report ─────────────────────────────────────────────────────────────
   process.stdout.write(`\n${dryRun ? "DRY RUN — nothing written" : "Loaded"}\n`);

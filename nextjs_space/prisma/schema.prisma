@@ -31,6 +31,18 @@ enum ContractStatusKind {
   RISK // legacy 2 — module "Dział ryzyka"
 }
 
+/// Legacy `contract.project` — which register a record belongs to. Mirrors
+/// ContractStatusKind, but lives on the record, so a record that loses its status
+/// still lands in the right register (docs/features/06, the 31 status-less projects).
+enum ContractModule {
+  CONTRACT // legacy 0 — "Umowy"
+  PROJECT // legacy 1 — "Projekty"
+  RISK // legacy 2 — "Dział ryzyka"
+  /// Legacy 3: 39 soft-deleted records from an abandoned 2021 experiment, with no status
+  /// and a businessline that does not exist. Kept for fidelity, shown nowhere (Q11).
+  LEGACY_2021
+}
+
 /// Legacy `contract_domain.type`.
 enum DomainKind {
   GENERAL // legacy 0
@@ -81,19 +93,22 @@ model User {
   loginCount    Int      @default(0)
   createdAt     DateTime @default(now())
 
-  groups              UserGroup[]
-  groupHistory        UserGroupHistory[]
-  locations           UserLocation[]
-  accessScopes        UserAccessScope[]
-  ownedGroups         Group[]             @relation("GroupOwner")
-  contractAccess      ContractUser[]
-  registeredContracts Contract[]          @relation("ContractRegisteredBy")
-  modifiedContracts   Contract[]          @relation("ContractModifiedBy")
-  acceptedContracts   Contract[]          @relation("ContractAcceptedBy")
-  opinions            Opinion[]
-  remarks             Remark[]
-  historyEntries      ContractHistory[]
-  shoutboxEntries     ShoutboxRecipient[]
+  groups                UserGroup[]
+  groupHistory          UserGroupHistory[]
+  locations             UserLocation[]
+  accessScopes          UserAccessScope[]
+  ownedGroups           Group[]             @relation("GroupOwner")
+  contractAccess        ContractUser[]
+  registeredContracts   Contract[]          @relation("ContractRegisteredBy")
+  modifiedContracts     Contract[]          @relation("ContractModifiedBy")
+  acceptedContracts     Contract[]          @relation("ContractAcceptedBy")
+  opinionRounds         Contract[]          @relation("ContractOpinionsRequestedBy")
+  registeredContractors Contractor[]        @relation("ContractorRegisteredBy")
+  modifiedContractors   Contractor[]        @relation("ContractorModifiedBy")
+  opinions              Opinion[]
+  remarks               Remark[]
+  historyEntries        ContractHistory[]
+  shoutboxEntries       ShoutboxRecipient[]
 
   @@index([active])
 }
@@ -161,6 +176,18 @@ model UserAccessScope {
 
   @@unique([userId, dimension, valueId])
   @@index([userId])
+}
+
+/// Legacy `access` — the ten visibility dimensions and how each one filters. The enum
+/// above names them; this table keeps what the enum cannot: which dictionary field the
+/// grant picker shows, and that location grants also match through the link table.
+model AccessDefinition {
+  id              Int             @id // legacy access.id
+  dimension       AccessDimension @unique
+  dictionaryTable String // legacy `table`
+  labelColumn     String // legacy `column`
+  contractColumn  String // legacy `name` — the contract column filtered
+  joinTable       String? // legacy `has_many`, only set for location
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -290,20 +317,25 @@ model Trade {
 // ─────────────────────────────────────────────────────────────────────────
 
 model Contractor {
-  id                   Int       @id @default(autoincrement())
-  shortName            String?
-  fullName             String?
-  address              String?
-  vatId                String? // legacy `vat_identification` (NIP)
-  register             String? // KRS / registry entry
-  cruIdentifier        String? // legacy `cru_identifier`
-  isCeidg              Boolean   @default(false)
-  isConnected          Boolean   @default(false) // legacy `companies_connected`
-  isDeleted            Boolean   @default(false)
-  registeredAt         DateTime?
-  registeredByLegacyId Int?
-  modifiedAt           DateTime?
-  modifiedByLegacyId   Int?
+  id             Int       @id @default(autoincrement())
+  shortName      String?
+  fullName       String?
+  address        String?
+  vatId          String? // legacy `vat_identification` (NIP)
+  register       String? // KRS / registry entry
+  cruIdentifier  String? // legacy `cru_identifier`
+  /// Legacy `cru_id` — numeric counterpart of `cruIdentifier`, the last link to the
+  /// pre-CRU system (1 019 rows, range 656–1693).
+  legacyCruId    Int?
+  isCeidg        Boolean   @default(false)
+  isConnected    Boolean   @default(false) // legacy `companies_connected`
+  isDeleted      Boolean   @default(false)
+  registeredAt   DateTime?
+  registeredById Int?
+  registeredBy   User?     @relation("ContractorRegisteredBy", fields: [registeredById], references: [id])
+  modifiedAt     DateTime?
+  modifiedById   Int?
+  modifiedBy     User?     @relation("ContractorModifiedBy", fields: [modifiedById], references: [id])
 
   contracts   Contract[]   @relation("ContractContractor")
   debtorFor   Contract[]   @relation("ContractDebtor")
@@ -389,18 +421,24 @@ model Contract {
   deliveryMethod   DeliveryMethod? @relation(fields: [deliveryMethodId], references: [id])
 
   // Flags
-  companiesConnected Boolean  @default(false) // "Podmioty powiązane"
-  insuranceGuarantee Boolean  @default(false)
-  obsc               Boolean  @default(false)
-  obscDescription    String?
-  opinionsRequested  Boolean  @default(false) // legacy `giveopinions` — opens the opinion round
-  isEditable         Boolean  @default(true) // legacy `edittable`
-  isProject          Boolean  @default(false) // legacy `project`; must agree with status.kind
-  isDeleted          Boolean  @default(false) // legacy soft delete
+  companiesConnected    Boolean        @default(false) // "Podmioty powiązane"
+  insuranceGuarantee    Boolean        @default(false)
+  obsc                  Boolean        @default(false)
+  obscDescription       String?
+  /// Legacy `giveopinions` is the id of the user who opened the opinion round (0 = none),
+  /// not a flag. Kept as a relation so "who asked for opinions" survives.
+  opinionsRequestedById Int?
+  opinionsRequestedBy   User?          @relation("ContractOpinionsRequestedBy", fields: [opinionsRequestedById], references: [id])
+  /// Derived: true when opinionsRequestedById is set. Kept as a column for indexing.
+  opinionsRequested     Boolean        @default(false)
+  isEditable            Boolean        @default(true) // legacy `edittable`
+  /// Legacy `project` (0–3). Replaces `isProject`, which collapsed 1, 2 and 3 into true.
+  module                ContractModule @default(CONTRACT)
+  isDeleted             Boolean        @default(false) // legacy soft delete
   /// Legacy `temp_form`: 1 = yes, 0 = no, -1 = unspecified -> null.
-  tempForm           Boolean?
+  tempForm              Boolean?
   /// Legacy `bill` — semantics unconfirmed, carried for fidelity.
-  bill               Boolean  @default(false)
+  bill                  Boolean        @default(false)
 
   /// Legacy `sps_id` / `sps_last_version` — reference into an external system,
   /// semantics unconfirmed, carried for fidelity.
@@ -414,12 +452,12 @@ model Contract {
   acceptedAt   DateTime?
 
   // Audit
-  registeredAt   DateTime  @default(now())
-  registeredById Int?
-  registeredBy   User?     @relation("ContractRegisteredBy", fields: [registeredById], references: [id])
-  modifiedAt     DateTime?
-  modifiedById   Int?
-  modifiedBy     User?     @relation("ContractModifiedBy", fields: [modifiedById], references: [id])
+  registeredAt       DateTime  @default(now())
+  registeredById     Int?
+  registeredBy       User?     @relation("ContractRegisteredBy", fields: [registeredById], references: [id])
+  modifiedAt         DateTime?
+  modifiedById       Int?
+  modifiedBy         User?     @relation("ContractModifiedBy", fields: [modifiedById], references: [id])
   /// Legacy `oldregistered_on` — registration date carried over from the pre-CRU system.
   legacyRegisteredAt DateTime?
 
@@ -443,6 +481,7 @@ model Contract {
   @@index([isDeleted])
   @@index([opinionsRequested])
   @@index([identifier])
+  @@index([module])
 }
 
 /// Legacy `contract_has_location` — a contract may apply in several locations.
@@ -478,21 +517,26 @@ model ContractUser {
 // ─────────────────────────────────────────────────────────────────────────
 
 model Attachment {
-  id         Int     @id @default(autoincrement())
-  name       String? // display name
-  storageKey String? // legacy `path`
-  fileType   String? // pdf, msg, …
-  version    Int?
-  isFinal    Boolean @default(false) // legacy `finally` — "Wersja ostateczna"
+  id          Int     @id @default(autoincrement())
+  name        String? // display name
+  storageKey  String? // legacy `path`
+  fileType    String? // pdf, msg, …
+  version     Int?
+  isFinal     Boolean @default(false) // legacy `finally` — "Wersja ostateczna"
   /// Legacy `formsession` — groups files uploaded in one unsaved form session.
   formSession String?
 
+  // Restrict, matching legacy NO ACTION: deletion is soft (Contract.isDeleted), so a hard
+  // delete must fail loudly instead of silently destroying the files' metadata.
   contractId   Int?
-  contract     Contract?   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract     Contract?   @relation(fields: [contractId], references: [id], onDelete: Restrict)
   contractorId Int?
   contractor   Contractor? @relation(fields: [contractorId], references: [id])
 
-  addedAt DateTime @default(now())
+  addedAt          DateTime @default(now())
+  /// True when addedAt is the import timestamp rather than a real upload date. Legacy
+  /// `attachment` has no timestamp column; unrecoverable for historical files.
+  addedAtEstimated Boolean  @default(false)
 
   @@index([contractId])
   @@index([contractorId])
@@ -516,15 +560,18 @@ model OpinionType {
 model Opinion {
   id            Int          @id @default(autoincrement())
   contractId    Int
-  contract      Contract     @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract      Contract     @relation(fields: [contractId], references: [id], onDelete: Restrict)
   opinionTypeId Int?
   opinionType   OpinionType? @relation(fields: [opinionTypeId], references: [id])
   userId        Int?
   user          User?        @relation(fields: [userId], references: [id])
 
   description String
-  signed      Boolean   @default(false) // legacy `signature`
-  signedAt    DateTime?
+  /// Legacy `signature` — 0 on all 16 531 rows; the e-signature was never used.
+  /// Kept for fidelity only; nothing should read it.
+  signed      Boolean   @default(false)
+  /// Legacy `sign_date` — misnamed there: it is when the opinion was answered.
+  respondedAt DateTime?
   active      Boolean   @default(true)
 
   /// Legacy flags on the opinion round.
@@ -543,7 +590,7 @@ model Opinion {
 model AcceptanceForm {
   id                  Int       @id @default(autoincrement())
   contractId          Int       @unique
-  contract            Contract  @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  contract            Contract  @relation(fields: [contractId], references: [id], onDelete: Restrict)
   mdrProcedure        Boolean   @default(false)
   initialVerification Boolean   @default(false)
   formSent            Boolean   @default(false)

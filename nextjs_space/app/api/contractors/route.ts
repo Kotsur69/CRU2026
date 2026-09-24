@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
       address: str("address", MAX_NAME),
       vatId,
       registeredAt: new Date(),
-      registeredByLegacyId: actor.id,
+      registeredById: actor.id,
     },
     select: { id: true, shortName: true, fullName: true, vatId: true },
   });

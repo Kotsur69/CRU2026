@@ -6,7 +6,9 @@ without going back to `cru.sql` or the legacy audit to re-derive anything.
 - **Language:** English prose. Polish UI labels, field names and status names are
   quoted verbatim, including legacy misspellings.
 - **Status:** tracked in each file's `status:` frontmatter and mirrored in the table
-  below. Files are never renamed. `grep -rl "status: done" docs/features/` lists
+  below. A spec whose implementation is finished is renamed with a `_done` suffix
+  (`01-data-model-gaps_done.md`), and its closing "Implementation notes" section
+  records what was built and any deviation. `ls docs/features/*_done.md` lists
   finished work.
 - **Template:** [`00-TEMPLATE.md`](00-TEMPLATE.md). Copy it; keep the section order.
 - **All 34 are written.** `status:` tracks *implementation*, not whether the
@@ -28,8 +30,8 @@ Everything else depends on these. Build in order.
 
 | # | Spec | Status | Depends on |
 |---|---|---|---|
-| 01 | [Data-model gaps and re-import](01-data-model-gaps.md) | todo | — |
-| 02 | [Identifier grammar and numbering](02-identifier-grammar.md) | todo | 01 |
+| 01 | [Data-model gaps and re-import](01-data-model-gaps_done.md) | done | — |
+| 02 | [Identifier grammar and numbering](02-identifier-grammar_done.md) | done | 01 |
 | 03 | [Read authorization](03-read-authorization.md) | todo | 01 |
 | 04 | [Identity and directory](04-identity-directory.md) | todo | — |
 | 05 | [Shared UI consolidation](05-shared-ui.md) | todo | — |
