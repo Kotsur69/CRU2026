@@ -6,5 +6,5 @@ export default function ProjektAkcjaPage(props: {
   params: { id: string; akcja: string };
   searchParams: Record<string, string | undefined>;
 }) {
-  return <RecordActionPage {...props} basePath="/projekty" />;
+  return <RecordActionPage {...props} module="PROJECT" />;
 }

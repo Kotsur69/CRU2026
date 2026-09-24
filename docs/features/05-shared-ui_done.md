@@ -2,7 +2,7 @@
 id: 05
 title: Shared UI consolidation
 group: A-foundations
-status: todo
+status: done
 depends-on: []
 legacy-tables: []
 prisma-models: []
@@ -218,3 +218,31 @@ Re-run after.
 2. **Keep `Fact` tiles?** The five summary tiles at the top of the contract preview
    are ours, not legacy's. They are useful; confirming they stay means the shared
    `Section` component keeps supporting them.
+
+## Implementation notes (2026-09-24)
+
+- **New shared pieces:** `components/ui/section.tsx` (`Section`, `Field`, `Fact`,
+  `FlagChip`), `components/ui/data-table.tsx` (`DataTable`, `Cell`, `Truncated`,
+  `ListedNames`, the empty state), `components/ui/column-chooser.tsx` and
+  `lib/contracts/modules.ts`. All five `Section`/`Field` copies and the three search
+  forms are gone. `intParam` and `MODULE_PATH` each have one definition.
+- **`FilterBar`** gained date, number and contractor-autocomplete fields (a small
+  client island, `components/ui/contractor-filter.tsx`), a per-field hint, a custom
+  submit label and a six-column layout. It is wrapped in `<details open>`, so the
+  old forms' "Zwiń/Rozwiń" survives without client JS.
+- **Column chooser as an island.** The table is server-rendered with every column
+  carrying `data-col`; the island only injects CSS that hides the unchosen ones. The
+  `localStorage` key and format are unchanged, so saved choices carry over. The
+  Umowy page's first-load JS fell from 5.09 kB to 2.55 kB.
+- **Module guard.** `/umowy/[id]`, `/projekty/[id]` and `/ryzyko/[id]` all render
+  `ContractPreview` with the route's module; an out-of-module id is a 404. The
+  record actions (`/[id]/edycja`, …) apply the same guard. The palette comes from
+  the module (`moduleStatusTone`).
+- **Catch-all** answers only for unbuilt module roots (`/supply-chain`);
+  `/umowy/1/2/3`, `/lokalizacje/5` and `/raporty/x` are 404s.
+- **Open questions:** the chooser now also serves Projekty (spec 07's call), and the
+  `Fact` tiles stay.
+- **Not literally "no visible change".** Specs 06–09 were built in the same pass, so
+  their deliberate changes (labels, counts, columns) landed together with this
+  refactor. Everything else was compared against a baseline capture of all ten
+  screens.

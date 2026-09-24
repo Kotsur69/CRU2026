@@ -2,7 +2,7 @@
 id: 09
 title: Podgląd rekordu (contract detail)
 group: B-registers
-status: todo
+status: done
 depends-on: [05]
 legacy-tables: [contract]
 prisma-models: [Contract, ContractUser, Attachment, Remark, Opinion, AcceptanceForm]
@@ -371,3 +371,26 @@ Manual checks:
    should see it before cutover.
 4. **Q40 carries over** — `Dłużnik` is shown on 14,215 records and nobody knows what
    it means outside Dział ryzyka.
+
+## Implementation notes (2026-09-24)
+
+- One module-aware `ContractPreview` for all three routes, sections as in the table
+  above. The 433-line Projekty fork is gone.
+- **Relations** load once and are partitioned in memory (`partitionRelations`):
+  "Aneks do umowy", "Aneksy do umowy", and **"Project"** (English label, links to
+  `/projekty/{id}`, `;`-separated). A project shows "Umowa" (the resulting
+  contract), plus "Projekt nadrzędny" / "Projekty aneksów" where the data has them.
+  Children sort numerically (`compareIdentifiers`).
+- **Audit footer** shows the login, with the display name on hover. The
+  counterparty shows "Nazwa NIP: …". The four legacy booleans plus
+  Gwarancja/ubezpieczenie are chips.
+- **Per module:** risk hides Przedmiot, Charakter umowy, Eksport/Import and
+  Powiązania, and puts Dłużnik in the tiles. Obieg FAU always shows on projects, on
+  contracts only when there are rows, never on risk. Its empty state comes from the
+  rows, not the `opinionsRequested` flag. A project's workflow section shows
+  "Koordynator obiegu" from spec 01's `opinionsRequestedBy`.
+- **Frozen records.** `canEditContract` now honours `Contract.isEditable`
+  (administrators excepted). The action bar hides edit actions and says why. This
+  one gate from spec 03 was needed here, and does not depend on Q18.
+- The schema doc comments on `bill` ("Weksel") and `tempForm` ("Formularz") cite
+  this spec.

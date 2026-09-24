@@ -365,7 +365,10 @@ model Contract {
   /// NOT unique: 111 identifiers repeat in the legacy data (e.g. 2012/0258 appears 4x).
   identifier String?
 
-  // Annexes point at their parent contract.
+  // `parentId` is overloaded in legacy (docs/features/07). On a contract it means "I am an
+  // annex of that contract"; on a project it means "I became that contract" — so the
+  // `annexes` relation also holds the projects a contract came from. Ask the module of the
+  // other end before reading a link (lib/contracts/relations.ts).
   parentId Int?
   parent   Contract?  @relation("ContractAnnexes", fields: [parentId], references: [id])
   annexes  Contract[] @relation("ContractAnnexes")
@@ -393,7 +396,9 @@ model Contract {
   // Counterparties
   contractorId Int?
   contractor   Contractor? @relation("ContractContractor", fields: [contractorId], references: [id])
-  /// Risk module: the debtor. Legacy `debtor_id` had no foreign key.
+  /// A second Contractor on the record, used in all three modules — 8 964 contracts and
+  /// 5 037 projects carry one distinct from the counterparty, against 214 risk records.
+  /// Its meaning outside Dział ryzyka is unconfirmed (Q40). Legacy `debtor_id` had no FK.
   debtorId     Int?
   debtor       Contractor? @relation("ContractDebtor", fields: [debtorId], references: [id])
 
@@ -435,9 +440,12 @@ model Contract {
   /// Legacy `project` (0–3). Replaces `isProject`, which collapsed 1, 2 and 3 into true.
   module                ContractModule @default(CONTRACT)
   isDeleted             Boolean        @default(false) // legacy soft delete
-  /// Legacy `temp_form`: 1 = yes, 0 = no, -1 = unspecified -> null.
+  /// Legacy `temp_form`: 1 = yes, 0 = no, -1 = unspecified -> null. Shown as "Formularz"
+  /// — the only label left for it on the legacy preview (docs/features/09, Q45); what the
+  /// flag is for is still open (Q10).
   tempForm              Boolean?
-  /// Legacy `bill` — semantics unconfirmed, carried for fidelity.
+  /// Legacy `bill` — "Weksel", a bill of exchange: by elimination the only column behind
+  /// the preview's fourth boolean (docs/features/09, Q45).
   bill                  Boolean        @default(false)
 
   /// Legacy `sps_id` / `sps_last_version` — reference into an external system,

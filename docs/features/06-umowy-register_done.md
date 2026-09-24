@@ -2,7 +2,7 @@
 id: 06
 title: Rejestr Umowy
 group: B-registers
-status: todo
+status: done
 depends-on: [03, 05]
 legacy-tables: [contract, contract_status, contract_type, contract_company, buissnesline, location, domain, contract_nature, contractor, contract_users]
 prisma-models: [Contract, ContractStatus, DocumentType, Company, Businessline, Location, Domain, ContractNature, Contractor, ContractUser]
@@ -474,3 +474,22 @@ Manual checks:
    records in the register with none, all from a two-year window. Moving them to
    Projekty makes them visible; deciding what they *are* is a data question for the
    legal department, and relates to Q11 (the 39 orphaned 2021 records).
+
+## Implementation notes (2026-09-24)
+
+- Rewritten to the spec 05 recipe. The scope is `registerWhere("CONTRACT")`
+  (`lib/contracts/scope.ts`), keyed on `Contract.module` from spec 01, so the 31
+  status-less projects left this register.
+- All fifteen legacy filters with legacy spelling (`buissnesline`, `tylko OBSSC`,
+  `Podmiot powiązane`, "Data zakończenia do"), submit reads **"szukaj"**. The
+  contractor filter is an autocomplete over all counterparties, deleted ones
+  included (`/api/contractors?all=1`).
+- **Owner names** follow legacy, "Nazwisko Imię" (`userLabel`). `[na]` marks an
+  inactive account. Placeholders get no suffix: their activity is unknown, not false,
+  and all 451 would otherwise read `[na]`.
+- **Columns:** the provenance comment is corrected, the twelve audited columns carry
+  `legacy: true`, and the header reads **"Buissnesline"**. "Aneks" counts only
+  CONTRACT-module, non-deleted children. "Uprawnienia" now shows edycja / odczyt /
+  zamrożony per row (`rowPermission` in `lib/authz.ts`).
+- **Pagination** keeps "Pokazano X–Y z Z" and adds **"Idź do strony"**.
+- **Deferred:** spec 03's actor scope — spec 03 is blocked on Q18.

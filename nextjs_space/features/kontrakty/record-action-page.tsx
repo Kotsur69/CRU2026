@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { MODULE_PATH, registerOf, type RegisterModule } from "@/lib/contracts/modules";
 import { ContractFormPage } from "./form-page";
 import { AcceptanceFormPage } from "./acceptance-form-page";
 import { QuestionPage } from "./question-page";
@@ -19,14 +21,20 @@ function isAction(value: string): value is RecordAction {
 export interface RecordActionPageProps {
   params: { id: string; akcja: string };
   searchParams: Record<string, string | undefined>;
-  basePath: string;
+  /** Rejestr trasy — rekord innego modułu nie otwiera się pod jej adresem. */
+  module: RegisterModule;
 }
 
-export function RecordActionPage({ params, searchParams, basePath }: RecordActionPageProps) {
+export async function RecordActionPage({ params, searchParams, module }: RecordActionPageProps) {
   // Oba segmenty są niezaufane: id musi być liczbą, akcja — jedną z wyliczonych.
   const id = Number.parseInt(params.id, 10);
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
   if (!isAction(params.akcja)) notFound();
+
+  // Ta sama bramka co na podglądzie (docs/features/05): projekt pod /umowy to 404.
+  const record = await prisma.contract.findUnique({ where: { id }, select: { module: true } });
+  if (!record || registerOf(record.module) !== module) notFound();
+  const basePath = MODULE_PATH[module];
 
   switch (params.akcja) {
     case "edycja":

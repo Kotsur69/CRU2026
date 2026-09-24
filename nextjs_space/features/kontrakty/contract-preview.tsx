@@ -3,86 +3,83 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { contractorLabel, formatDate, formatDateTime, formatMoney, userLabel } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { statusTone, endUrgency } from "@/lib/contract-status";
+import { Fact, Field, FlagChip, Section } from "@/components/ui/section";
+import { endUrgency } from "@/lib/contract-status";
 import { currentActor, canEditContract } from "@/lib/authz";
+import { compareIdentifiers } from "@/lib/contracts/identifier";
+import {
+  MODULE_PATH,
+  moduleStatusTone,
+  modulePath,
+  registerOf,
+  type RegisterModule,
+} from "@/lib/contracts/modules";
+import { partitionRelations } from "@/lib/contracts/relations";
 import { ContractActions } from "./contract-actions";
 
 /**
- * Podgląd rekordu `contract`. Legacy trzyma Umowy, Projekty i Dział ryzyka w jednej
- * tabeli (rozróżnia je `contract_status.project`), więc ten sam ekran obsługuje
- * rejestr umów i rejestr ryzyka — różni je tylko odnośnik powrotny.
+ * Podgląd rekordu `contract` — jeden ekran dla Umów, Projektów i Działu ryzyka
+ * (docs/features/05, 09). Legacy trzyma trzy moduły w jednej tabeli, więc treść i
+ * etykiety są wspólne; różnice między modułami są strukturalne (paleta statusu, obieg
+ * FAU, powiązania, pola zawsze puste w ryzyku) i wynikają z modułu, nie z rekordu.
+ *
+ * Kolejność pól w sekcjach idzie za audytem (§1.4, 34 pola); pola bez wartości
+ * pokazują „—", żeby układ był stały między rekordami.
  */
 
-// ── Prymitywy prezentacyjne (lokalne dla ekranu detalu) ──────────────────
+const MODULE_LABEL: Record<RegisterModule, string> = {
+  CONTRACT: "Umowy",
+  PROJECT: "Projekty",
+  RISK: "Dział ryzyka",
+};
 
-function Section({
-  title,
-  children,
-  className,
-}: {
-  title: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
+const PERSON = { id: true, firstName: true, lastName: true, login: true } as const;
+
+type Person = { id: number; firstName: string | null; lastName: string | null; login: string | null };
+
+/** Stopka audytu pokazuje login, jak legacy („mborowiecka"); nazwisko jest w podpowiedzi. */
+function AccountName({ user }: { user: Person | null }) {
+  if (!user) return null;
+  return <span title={userLabel(user)}>{user.login ?? userLabel(user)}</span>;
+}
+
+interface LinkedRecord {
+  id: number;
+  identifier: string | null;
+  module: "CONTRACT" | "PROJECT" | "RISK" | "LEGACY_2021";
+}
+
+function RecordLink({ record }: { record: LinkedRecord }) {
   return (
-    <section className={`rounded-lg border bg-card p-5 shadow-sm ${className ?? ""}`}>
-      <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h2>
-      {children}
-    </section>
+    <Link href={`${modulePath(record.module)}/${record.id}`} className="text-primary hover:underline">
+      {record.identifier ?? `#${record.id}`}
+    </Link>
   );
 }
 
-function Field({ label, children }: { label: string; children?: React.ReactNode }) {
-  const empty = children === null || children === undefined || children === "";
+/** Lista powiązanych rekordów rozdzielona średnikami — tak pole „Project" pokazuje legacy. */
+function RecordLinks({ records }: { records: LinkedRecord[] }) {
+  if (records.length === 0) return null;
   return (
-    <div className="grid grid-cols-3 gap-3 border-b border-border/60 py-2 last:border-0">
-      <dt className="col-span-1 text-sm text-muted-foreground">{label}</dt>
-      <dd className="col-span-2 text-sm">{empty ? "—" : children}</dd>
-    </div>
-  );
-}
-
-function Fact({
-  label,
-  children,
-  emphasize,
-}: {
-  label: string;
-  children: React.ReactNode;
-  emphasize?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border bg-card p-3 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-      <div
-        className={emphasize ? "mt-1 font-heading text-lg font-semibold" : "mt-1 text-sm font-medium"}
-      >
-        {children ?? "—"}
-      </div>
-    </div>
-  );
-}
-
-function FlagChip({ on, label }: { on: boolean | null; label: string }) {
-  // Tri-state in legacy: 1 / 0 / -1 ("nie określono") — null must not read as "no".
-  if (on === null) return <Badge tone="neutral">? {label}</Badge>;
-  return (
-    <Badge tone={on ? "success" : "neutral"}>
-      {on ? "✓" : "–"} {label}
-    </Badge>
+    <span>
+      {records.map((r, i) => (
+        <span key={r.id}>
+          <RecordLink record={r} />
+          {i < records.length - 1 ? "; " : ""}
+        </span>
+      ))}
+    </span>
   );
 }
 
 export interface ContractPreviewProps {
   /** Legacy `contract.id`, already validated by the calling route. */
   id: number;
-  backHref: string;
-  backLabel: string;
+  /** Rejestr trasy — rekord z innego modułu nie renderuje się pod cudzym adresem. */
+  module: RegisterModule;
 }
 
-export async function ContractPreview({ id, backHref, backLabel }: ContractPreviewProps) {
+export async function ContractPreview({ id, module }: ContractPreviewProps) {
   const c = await prisma.contract.findUnique({
     where: { id },
     include: {
@@ -101,37 +98,42 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
       contractor: true,
       debtor: true,
       acceptanceForm: true,
-      parent: { select: { id: true, identifier: true } },
+      parent: { select: { id: true, identifier: true, module: true } },
+      // `parentId` niesie i aneksy, i projekty, z których umowa powstała — jedno wczytanie,
+      // podział w pamięci po module dziecka (docs/features/07, 09).
       annexes: {
         where: { isDeleted: false },
-        orderBy: { identifier: "asc" },
-        select: { id: true, identifier: true, documentType: { select: { name: true } } },
+        select: { id: true, identifier: true, module: true },
       },
       attachments: { orderBy: [{ isFinal: "desc" }, { id: "asc" }] },
-      userAccess: {
-        include: { user: { select: { id: true, firstName: true, lastName: true, login: true } } },
-      },
+      userAccess: { orderBy: { readOnly: "asc" }, include: { user: { select: PERSON } } },
       opinions: {
         where: { active: true },
-        include: {
-          opinionType: true,
-          user: { select: { id: true, firstName: true, lastName: true, login: true } },
-        },
+        orderBy: { id: "asc" },
+        include: { opinionType: true, user: { select: PERSON } },
       },
       remarkEntries: {
         where: { active: true },
         orderBy: { createdAt: "desc" },
-        include: { user: { select: { id: true, firstName: true, lastName: true, login: true } } },
+        include: { user: { select: PERSON } },
       },
-      registeredBy: { select: { id: true, firstName: true, lastName: true, login: true } },
-      modifiedBy: { select: { id: true, firstName: true, lastName: true, login: true } },
+      opinionsRequestedBy: { select: PERSON },
+      registeredBy: { select: PERSON },
+      modifiedBy: { select: PERSON },
     },
   });
 
-  if (!c || c.isDeleted) notFound();
+  // Rekord spoza rejestru trasy to 404, jak rekord nieistniejący — zła ścieżka dawała
+  // zły odnośnik powrotny, złe przyciski i złą paletę statusu (docs/features/05).
+  if (!c || c.isDeleted || registerOf(c.module) !== module) notFound();
+
+  const isRisk = module === "RISK";
+  const isProject = module === "PROJECT";
+  const backHref = MODULE_PATH[module];
 
   const actor = await currentActor();
   const canEdit = actor !== null && (await canEditContract(actor, c.id));
+  const frozen = !c.isEditable && !actor?.isAdmin;
 
   const money = formatMoney(c.salary?.toString(), c.currency?.code?.toUpperCase());
   const end = endUrgency(c.dateEnd, c.status?.name);
@@ -139,6 +141,9 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
   // grades editing rights within that set (see lib/contract-access.ts).
   const owners = c.userAccess.map((a) => userLabel(a.user));
   const editors = c.userAccess.filter((a) => !a.readOnly).map((a) => userLabel(a.user));
+  const reviewers = Array.from(
+    new Set(c.opinions.map((o) => (o.user ? userLabel(o.user) : null)).filter(Boolean)),
+  ) as string[];
   // The primary location FK and the many-to-many table are both populated in legacy.
   const locations = Array.from(
     new Set(
@@ -147,31 +152,48 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
       ),
     ),
   );
-  const hasAnnexLinks = Boolean(c.parent) || c.annexes.length > 0;
-  // Parent and annexes stay inside the register the reader came from.
-  const recordHref = (recordId: number) => `${backHref}/${recordId}`;
+  const relations = partitionRelations({
+    module: c.module,
+    parent: c.parent,
+    children: [...c.annexes].sort((a, b) => compareIdentifiers(a.identifier, b.identifier)),
+  });
+  const counterparty = c.contractor
+    ? `${contractorLabel(c.contractor)}${c.contractor.vatId ? ` NIP: ${c.contractor.vatId}` : ""}`
+    : null;
+  const debtor = c.debtor
+    ? `${contractorLabel(c.debtor)}${c.debtor.vatId ? ` NIP: ${c.debtor.vatId}` : ""}`
+    : null;
+  // Obieg FAU: zawsze na projektach, na umowach tylko gdy są wpisy (40 rekordów), w
+  // Dziale ryzyka nigdy (docs/features/09).
+  const showOpinions = isProject || (!isRisk && (c.opinions.length > 0 || c.acceptanceForm !== null));
 
   return (
     <div className="max-w-5xl space-y-5">
       {/* Nagłówek */}
       <div>
         <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground">
-          ← {backLabel}
+          ← {MODULE_LABEL[module]}
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="font-heading text-2xl font-semibold">{c.identifier ?? `#${c.id}`}</h1>
-          <Badge tone={statusTone(c.status?.name)}>{c.status?.name ?? "—"}</Badge>
+          {c.status ? (
+            <Badge tone={moduleStatusTone(c.module, c.status.name)}>{c.status.name}</Badge>
+          ) : (
+            <Badge tone="warning">brak statusu</Badge>
+          )}
           {c.documentType?.name && <Badge tone="brand">{c.documentType.name}</Badge>}
-          {c.parent && (
+          {relations.annexOf && (
             <Badge tone="info">
-              Aneks do{" "}
-              <Link href={recordHref(c.parent.id)} className="underline">
-                {c.parent.identifier ?? `#${c.parent.id}`}
-              </Link>
+              Aneks do <RecordLink record={relations.annexOf} />
+            </Badge>
+          )}
+          {relations.resultingContract && (
+            <Badge tone="success">
+              Umowa: <RecordLink record={relations.resultingContract} />
             </Badge>
           )}
         </div>
-        {c.description && <p className="mt-2 text-muted-foreground">{c.description}</p>}
+        {!isRisk && c.description && <p className="mt-2 text-muted-foreground">{c.description}</p>}
       </div>
 
       {/* Pasek akcji — jak w legacy pod podglądem umowy (audyt 1.5). */}
@@ -179,21 +201,32 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
         recordId={c.id}
         basePath={backHref}
         canEdit={canEdit}
+        frozen={frozen}
         // Aneksy są cechą umów i projektów; rekordy Działu ryzyka ich nie mają.
-        allowAnnexes={c.status?.kind !== "RISK"}
+        allowAnnexes={!isRisk}
       />
 
       {/* Kluczowe fakty */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Fact label="Spółka">{c.company?.shortName}</Fact>
-        <Fact label="Lokalizacja">
-          {locations.length ? locations[0] : "—"}
-          {locations.length > 1 && (
-            <span className="text-muted-foreground"> +{locations.length - 1}</span>
-          )}
-        </Fact>
-        <Fact label="Kontrahent">{c.contractor ? contractorLabel(c.contractor) : "—"}</Fact>
-        <Fact label="Wynagrodzenie" emphasize>
+        {isRisk ? (
+          <Fact label="Dłużnik">
+            {c.debtor
+              ? c.debtorId === c.contractorId
+                ? "— (ten sam co kontrahent)"
+                : contractorLabel(c.debtor)
+              : "—"}
+          </Fact>
+        ) : (
+          <Fact label="Lokalizacja">
+            {locations.length ? locations[0] : "—"}
+            {locations.length > 1 && (
+              <span className="text-muted-foreground"> +{locations.length - 1}</span>
+            )}
+          </Fact>
+        )}
+        <Fact label="Kontrahenci">{c.contractor ? contractorLabel(c.contractor) : "—"}</Fact>
+        <Fact label={isRisk ? "Kwota" : "Wynagrodzenie"} emphasize>
           <span className="tabular-nums">{money}</span>
         </Fact>
         <Fact label="Okres obowiązywania">
@@ -210,21 +243,37 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
 
       {/* Sekcje szczegółowe */}
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+        {isProject && (
+          <Section title="Workflow projektu">
+            <dl>
+              <Field label="Status">{c.status?.name}</Field>
+              <Field label="Koordynator obiegu">
+                {c.opinionsRequestedBy ? userLabel(c.opinionsRequestedBy) : null}
+              </Field>
+              <Field label="Opiniujący">{reviewers.length ? reviewers.join(", ") : null}</Field>
+              <Field label="Data wysłania do podpisu">
+                {c.sentOn && <span className="tabular-nums">{formatDate(c.sentOn)}</span>}
+              </Field>
+              <Field label="Ostatnia notatka">{c.remarkEntries[0]?.body}</Field>
+            </dl>
+          </Section>
+        )}
+
         <Section title="Klasyfikacja">
           <dl>
-            <Field label="Businessline">{c.businessline?.name}</Field>
+            <Field label="Buissnesline">{c.businessline?.name}</Field>
             <Field label="Typ dokumentu">{c.documentType?.name}</Field>
             <Field label="Numer umowy">{c.contractReference}</Field>
-            <Field label="Rodzaj umowy">{c.domain?.name}</Field>
-            <Field label="Charakter umowy">{c.nature?.name}</Field>
+            <Field label={isRisk ? "Rodzaj" : "Rodzaj umowy"}>{c.domain?.name}</Field>
+            {!isRisk && <Field label="Charakter umowy">{c.nature?.name}</Field>}
             <Field label="Lokalizacje">{locations.length ? locations.join(", ") : null}</Field>
           </dl>
         </Section>
 
-        <Section title="Warunki i finanse">
+        <Section title={isRisk ? "Kwota" : "Przedmiot i wynagrodzenie"}>
           <dl>
-            <Field label="Przedmiot umowy">{c.description}</Field>
-            <Field label="Wynagrodzenie">
+            {!isRisk && <Field label="Przedmiot umowy">{c.description}</Field>}
+            <Field label={isRisk ? "Kwota" : "Wynagrodzenie"}>
               <span className="tabular-nums">{money}</span>
             </Field>
             <Field label="Waluta">{c.currency?.code?.toUpperCase()}</Field>
@@ -236,7 +285,7 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
         <Section title="Terminy">
           <dl>
             <Field label="Data zawarcia">
-              <span className="tabular-nums">{formatDate(c.dateBegin)}</span>
+              {c.dateBegin && <span className="tabular-nums">{formatDate(c.dateBegin)}</span>}
             </Field>
             <Field label="Data zakończenia">
               {/* Brak daty JEST zapisem „na czas nieokreślony" — tak czyta to legacy. */}
@@ -253,49 +302,89 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
             </Field>
             <Field label="Okres wypowiedzenia">{c.noticePeriod?.name}</Field>
             <Field label="Data wysłania do podpisu">
-              <span className="tabular-nums">{formatDate(c.sentOn)}</span>
+              {c.sentOn && <span className="tabular-nums">{formatDate(c.sentOn)}</span>}
             </Field>
           </dl>
         </Section>
 
-        <Section title="Klasyfikacja dodatkowa">
+        <Section title="Dostawa i handel">
           <dl>
             <Field label="Forma doręczenia">{c.deliveryMethod?.name}</Field>
-            <Field label="Eksport/Import">{c.trade?.name}</Field>
+            {!isRisk && <Field label="Eksport/Import">{c.trade?.name}</Field>}
             <Field label="Opis OBSC">{c.obscDescription}</Field>
           </dl>
         </Section>
 
         <Section title="Strony">
           <dl>
-            <Field label="Kontrahent">
-              {c.contractor
-                ? `${contractorLabel(c.contractor)}${c.contractor.vatId ? ` (NIP ${c.contractor.vatId})` : ""}`
-                : null}
-            </Field>
-            <Field label="Dłużnik">{c.debtor ? contractorLabel(c.debtor) : null}</Field>
-            <Field label="Właściciel umowy">{owners.length ? owners.join(", ") : null}</Field>
-            <Field label="Prawo edycji">{editors.length ? editors.join(", ") : null}</Field>
+            <Field label="Kontrahenci">{counterparty}</Field>
+            {/* Dłużnik nie jest w podglądzie legacy — pokazujemy go, bo 14 215 rekordów go
+                ma, a jego znaczenie poza Działem ryzyka jest otwarte (Q40). */}
+            <Field label="Dłużnik">{debtor}</Field>
+            <Field label="Właściciel umowy">{owners.length ? owners.join("; ") : null}</Field>
+            <Field label="Prawo edycji">{editors.length ? editors.join("; ") : null}</Field>
           </dl>
         </Section>
 
         <Section title="Cechy">
           <div className="flex flex-wrap gap-2">
             <FlagChip on={c.bill} label="Weksel" />
-            <FlagChip on={c.insuranceGuarantee} label="Gwarancja/ubezpieczenie" />
-            <FlagChip on={c.companiesConnected} label="Podmioty powiązane" />
+            <FlagChip on={c.companiesConnected} label="Podmiot powiązane" />
             <FlagChip on={c.tempForm} label="Formularz" />
             <FlagChip on={c.obsc} label="OBSC" />
+            {/* Poza podglądem legacy — 204 rekordy ją mają (docs/features/09). */}
+            <FlagChip on={c.insuranceGuarantee} label="Gwarancja/ubezpieczenie" />
           </div>
         </Section>
+
+        {/* Powiązania — trzy pola legacy z jednej relacji `parentId` (audyt §1.4, pola 4–6).
+            W ryzyku `parentId` jest pusty na wszystkich 406 rekordach. */}
+        {!isRisk && (
+          <Section title="Powiązania">
+            <dl>
+              {isProject ? (
+                <>
+                  <Field label="Umowa">
+                    {relations.resultingContract && (
+                      <RecordLink record={relations.resultingContract} />
+                    )}
+                  </Field>
+                  {relations.parentProject && (
+                    <Field label="Projekt nadrzędny">
+                      <RecordLink record={relations.parentProject} />
+                    </Field>
+                  )}
+                  <Field label="Projekty aneksów">
+                    {relations.annexes.length > 0 ? <RecordLinks records={relations.annexes} /> : null}
+                  </Field>
+                </>
+              ) : (
+                <>
+                  <Field label="Aneks do umowy">
+                    {relations.annexOf && <RecordLink record={relations.annexOf} />}
+                  </Field>
+                  <Field label="Aneksy do umowy">
+                    {relations.annexes.length > 0 ? <RecordLinks records={relations.annexes} /> : null}
+                  </Field>
+                  {/* Etykieta po angielsku, jak w legacy (audyt §1.4, pole 5). */}
+                  <Field label="Project">
+                    {relations.projects.length > 0 ? <RecordLinks records={relations.projects} /> : null}
+                  </Field>
+                </>
+              )}
+            </dl>
+          </Section>
+        )}
       </div>
 
-      {/* Uwagi */}
-      {c.remarks && (
-        <Section title="Uwagi">
+      {/* Uwagi — zawsze widoczne: legacy wypisuje etykietę także pustą. */}
+      <Section title="Uwagi">
+        {c.remarks ? (
           <p className="whitespace-pre-line text-sm">{c.remarks}</p>
-        </Section>
-      )}
+        ) : (
+          <p className="text-sm text-muted-foreground">Brak uwag.</p>
+        )}
+      </Section>
 
       {/* Notatki — pełny wątek z legacy `remarks` */}
       <Section title="Notatki">
@@ -313,34 +402,6 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
               </li>
             ))}
           </ul>
-        )}
-      </Section>
-
-      {/* Aneksy */}
-      <Section title="Aneksy">
-        {hasAnnexLinks ? (
-          <ul className="space-y-1 text-sm">
-            {c.parent && (
-              <li>
-                Umowa nadrzędna:{" "}
-                <Link href={recordHref(c.parent.id)} className="text-primary hover:underline">
-                  {c.parent.identifier ?? `#${c.parent.id}`}
-                </Link>
-              </li>
-            )}
-            {c.annexes.map((a) => (
-              <li key={a.id}>
-                <Link href={recordHref(a.id)} className="text-primary hover:underline">
-                  {a.identifier ?? `#${a.id}`}
-                </Link>
-                {a.documentType?.name && (
-                  <span className="ml-2 text-muted-foreground">{a.documentType.name}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">Brak powiązanych aneksów.</p>
         )}
       </Section>
 
@@ -371,61 +432,72 @@ export async function ContractPreview({ id, backHref, backLabel }: ContractPrevi
             ))}
           </ul>
         )}
-        {/* Uwaga: funkcja „wyślij jako załącznik" świadomie POMINIĘTA na tym etapie. */}
+        {/* Uwaga: funkcja „wyślij jako załącznik" świadomie POMINIĘTA (wykluczenie w README). */}
       </Section>
 
-      {/* Opinie (obieg FAU) */}
-      <Section title="Opinie">
-        {c.opinions.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {c.opinionsRequested ? "Obieg opinii otwarty — brak wpisów." : "Nie zlecono opiniowania."}
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {c.opinions.map((o) => (
-              <li key={o.id} className="border-b border-border/60 pb-3 last:border-0 last:pb-0">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{o.opinionType?.name ?? "—"}</span>
-                  <span>·</span>
-                  <span>{o.user ? userLabel(o.user) : "—"}</span>
-                  {/* `signed` jest 0 na wszystkich rekordach legacy — stan wynika z daty odpowiedzi. */}
-                  <Badge tone={o.respondedAt ? "success" : "warning"}>
-                    {o.respondedAt ? `Zaopiniowano ${formatDate(o.respondedAt)}` : "Oczekuje"}
-                  </Badge>
-                </div>
-                <p className="mt-1 whitespace-pre-line text-sm">{o.description}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
+      {/* Obieg FAU — opinie zaimportowane z legacy `opinions` */}
+      {showOpinions && (
+        <Section title="Obieg FAU (Formularz Akceptacji Umowy)">
+          {c.acceptanceForm && (
+            <dl className="mb-4">
+              <Field label="Procedura MDR">{c.acceptanceForm.mdrProcedure ? "Tak" : "Nie"}</Field>
+              <Field label="Weryfikacja wstępna">
+                {c.acceptanceForm.initialVerification ? "Tak" : "Nie"}
+              </Field>
+              <Field label="Formularz wysłany">{c.acceptanceForm.formSent ? "Tak" : "Nie"}</Field>
+              <Field label="Akceptacja właściciela">
+                {c.acceptanceForm.ownerAccepted
+                  ? `Tak · ${formatDateTime(c.acceptanceForm.ownerAcceptedAt)}`
+                  : "Nie"}
+              </Field>
+            </dl>
+          )}
 
-      {/* Formularz akceptacji umowy (procedura MDR) */}
-      <Section title="Formularz akceptacji umowy">
-        {c.acceptanceForm ? (
-          <dl>
-            <Field label="Procedura MDR">{c.acceptanceForm.mdrProcedure ? "Tak" : "Nie"}</Field>
-            <Field label="Weryfikacja wstępna">
-              {c.acceptanceForm.initialVerification ? "Tak" : "Nie"}
-            </Field>
-            <Field label="Formularz wysłany">{c.acceptanceForm.formSent ? "Tak" : "Nie"}</Field>
-            <Field label="Akceptacja właściciela">
-              {c.acceptanceForm.ownerAccepted
-                ? `Tak · ${formatDateTime(c.acceptanceForm.ownerAcceptedAt)}`
-                : "Nie"}
-            </Field>
-          </dl>
-        ) : (
-          <p className="text-sm text-muted-foreground">Brak formularza akceptacji.</p>
-        )}
-      </Section>
+          {/* Stan wynika z wpisów, nie z flagi `opinionsRequested` — ta mówi tylko, kto
+              otworzył obieg (docs/features/16). */}
+          {c.opinions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Brak opinii w obiegu.
+              {c.opinionsRequestedBy && ` Obieg otworzył(a): ${userLabel(c.opinionsRequestedBy)}.`}
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {c.opinions.map((o) => (
+                <li key={o.id} className="border-b border-border/60 pb-3 last:border-0 last:pb-0">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span>{o.opinionType?.name ?? "—"}</span>
+                    <span>·</span>
+                    <span>{o.user ? userLabel(o.user) : "—"}</span>
+                    {/* `signed` jest 0 na wszystkich rekordach legacy — stan wynika z daty odpowiedzi. */}
+                    <Badge tone={o.respondedAt ? "success" : "warning"}>
+                      {o.respondedAt ? `Zaopiniowano ${formatDate(o.respondedAt)}` : "Oczekuje"}
+                    </Badge>
+                  </div>
+                  {o.description && <p className="mt-1 whitespace-pre-line text-sm">{o.description}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
 
-      <div className="text-xs text-muted-foreground">
-        Zarejestrowano: {formatDateTime(c.registeredAt)}
-        {c.registeredBy ? ` przez ${userLabel(c.registeredBy)}` : ""} · Modyfikacja:{" "}
-        {formatDateTime(c.modifiedAt)}
-        {c.modifiedBy ? ` przez ${userLabel(c.modifiedBy)}` : ""}
-      </div>
+      {/* Audyt — legacy podaje znacznik czasu co do sekundy i LOGIN autora (audyt §1.4). */}
+      <Section title="Audyt">
+        <dl>
+          <Field label="Data rejestracji">
+            <span className="tabular-nums">{formatDateTime(c.registeredAt)}</span>
+          </Field>
+          <Field label="Zarejestrowano przez">
+            {c.registeredBy && <AccountName user={c.registeredBy} />}
+          </Field>
+          <Field label="Data modyfikacji">
+            {c.modifiedAt && <span className="tabular-nums">{formatDateTime(c.modifiedAt)}</span>}
+          </Field>
+          <Field label="Modyfikowano przez">
+            {c.modifiedBy && <AccountName user={c.modifiedBy} />}
+          </Field>
+        </dl>
+      </Section>
     </div>
   );
 }

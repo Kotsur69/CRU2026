@@ -46,7 +46,8 @@ export function yesNo(value: boolean | null | undefined): string {
 }
 
 /**
- * Display name for a user. Rows imported as placeholders from the legacy directory
+ * Display name for a user, "Nazwisko Imię" as legacy writes it (audyt §1.4: „Włodek
+ * Karolina; Mazur Mateusz"). Rows imported as placeholders from the legacy directory
  * (`am_admin`) carry no name yet, so fall back to the login and then the id.
  */
 export function userLabel(user: {
@@ -55,7 +56,7 @@ export function userLabel(user: {
   lastName: string | null;
   login: string | null;
 }): string {
-  const full = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  const full = [user.lastName, user.firstName].filter(Boolean).join(" ");
   return full || user.login || `#${user.id}`;
 }
 

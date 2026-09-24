@@ -2,7 +2,7 @@
 id: 08
 title: Rejestr Dział ryzyka
 group: B-registers
-status: todo
+status: done
 depends-on: [03, 05]
 legacy-tables: [contract, contract_status, domain, contractor]
 prisma-models: [Contract, ContractStatus, Domain, Contractor, ContractUser]
@@ -524,3 +524,24 @@ Manual checks:
 5. **Q44 — should the amount be sortable?** It is the organising fact of the module
    and no other register has sorting. Adding it here only is a small inconsistency
    with a clear justification; adding it everywhere is Q35.
+
+## Implementation notes (2026-09-24)
+
+- Scope `registerWhere("RISK")`, default page size 50. There is no "Przedmiot"
+  column or filter.
+- **Summary strip:** Rekordów, Łączna kwota, Aktywne, W sądzie, computed on the
+  *filtered* set (`riskSummary` in `lib/contracts/risk.ts`). Amounts are summed per
+  currency and never added across currencies. The court tile turns red when
+  non-zero.
+- **Filters:** debtor and contractor autocompletes; NIP matches either party; location,
+  document type, "Kwota od / do"; an amount-descending sort (Q44).
+- **Table:** "— (ten sam)" when the debtor is the counterparty, the domain as a
+  badge, amounts right-aligned in tabular numerals.
+- **Numbering:** `lib/contracts/risk-grammar.ts` (pure, shared with the form) plus
+  `nextRiskIdentifier` — `YYYY/L/NNNN`, the letter from the domain id, the sequence
+  per year and letter, deleted records counted. A new risk record without a domain
+  gets "Wybierz rodzaj — …". Verified: domain Poręczenie in 2026 → `2026/P/0001`
+  on the fixture.
+- **Mismatch** is a non-blocking warning in the form. The record saves and its
+  identifier is never touched.
+- The `debtorId` doc comment is corrected (Q40 context).

@@ -2,39 +2,26 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buttonClass } from "@/components/ui/button";
+import { FilterBar, type FilterField } from "@/components/ui/filter-bar";
+import { Pagination } from "@/components/ui/pagination";
 import { contractorLabel, userLabel } from "@/lib/format";
+import { dateParam, intParam, pageParam, pageSizeParam } from "@/lib/utils";
+import { currentActor, rowPermission } from "@/lib/authz";
 import { ASSIGNEE_SELECT, loadOwnerOptions } from "@/lib/contract-access";
-import { SearchForm } from "@/features/umowy/search-form";
+import { registerWhere } from "@/lib/contracts/scope";
 import { ContractsTable, type ContractRow } from "@/components/umowy/contracts-table";
 
 export const dynamic = "force-dynamic";
 
 type SP = Record<string, string | undefined>;
 
-const MAX_PAGE_SIZE = 500;
-const MIN_PAGE_SIZE = 10;
+/** Legacy otwiera listę na 15 (audyt §1.3); 25 to nasza świadoma decyzja (docs/features/06). */
 const DEFAULT_PAGE_SIZE = 25;
 
-/** Query-string values are untrusted: only a clean positive integer is accepted. */
-function intParam(value: string | undefined): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function dateParam(value: string | undefined): Date | undefined {
-  if (!value) return undefined;
-  const parsed = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
-  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-}
-
 function buildWhere(sp: SP): Prisma.ContractWhereInput {
-  const and: Prisma.ContractWhereInput[] = [
-    // Legacy soft delete — deleted rows never appear in the register.
-    { isDeleted: false },
-    // Projects and risk records live in their own modules, keyed off the status kind.
-    { OR: [{ status: { kind: "CONTRACT" } }, { statusId: null }] },
-  ];
+  // Rejestr wybiera `module`, nie `status.kind` — rekord bez statusu zostaje w swoim
+  // rejestrze, więc 31 projektów bez statusu nie udaje już umów (docs/features/06).
+  const and: Prisma.ContractWhereInput[] = registerWhere("CONTRACT");
 
   if (sp.identifier) and.push({ identifier: { contains: sp.identifier, mode: "insensitive" } });
   if (sp.contractNumber) {
@@ -81,6 +68,7 @@ function buildWhere(sp: SP): Prisma.ContractWhereInput {
   if (sp.obsc === "1") and.push({ obsc: true });
   if (sp.companyConnected === "1") and.push({ companiesConnected: true });
 
+  // Górna granica: „co kończy się do dnia X" (Q34). Rekordy bez daty końca nie pasują.
   const dateEnd = dateParam(sp.dateEnd);
   if (dateEnd) and.push({ dateEnd: { lte: dateEnd } });
 
@@ -88,7 +76,7 @@ function buildWhere(sp: SP): Prisma.ContractWhereInput {
 }
 
 /** Dictionary options for the filter form. Ids are stringified for the select values. */
-async function loadDictionaries() {
+async function loadDictionaries(contractorId: number | undefined) {
   const [
     documentTypes,
     statuses,
@@ -97,7 +85,7 @@ async function loadDictionaries() {
     domains,
     natures,
     businesslines,
-    contractors,
+    selectedContractor,
     owners,
   ] = await Promise.all([
     prisma.documentType.findMany({
@@ -128,37 +116,66 @@ async function loadDictionaries() {
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
     }),
-    prisma.contractor.findMany({
-      where: { isDeleted: false },
-      orderBy: [{ shortName: "asc" }, { fullName: "asc" }],
-      select: { id: true, shortName: true, fullName: true },
-    }),
+    // Kontrahentów są tysiące — filtr to autocomplete, więc potrzebna jest tylko etykieta
+    // firmy już wybranej w adresie.
+    contractorId === undefined
+      ? null
+      : prisma.contractor.findUnique({
+          where: { id: contractorId },
+          select: { id: true, shortName: true, fullName: true },
+        }),
     loadOwnerOptions(),
   ]);
 
+  const opts = <T extends { id: number }>(rows: T[], name: (row: T) => string) =>
+    rows.map((row) => ({ id: String(row.id), name: name(row) }));
+
   return {
-    documentTypes: documentTypes.map((d) => ({ id: String(d.id), name: d.name })),
-    statuses: statuses.map((s) => ({ id: String(s.id), name: s.name })),
-    companies: companies.map((c) => ({ id: String(c.id), name: c.shortName })),
-    locations: locations.map((l) => ({ id: String(l.id), name: l.name })),
-    domains: domains.map((d) => ({ id: String(d.id), name: d.name })),
-    natures: natures.map((n) => ({ id: String(n.id), name: n.name })),
-    businesslines: businesslines.map((b) => ({ id: String(b.id), name: b.name })),
-    contractors: contractors.map((k) => ({ id: String(k.id), name: contractorLabel(k) })),
+    documentTypes: opts(documentTypes, (d) => d.name),
+    statuses: opts(statuses, (s) => s.name),
+    companies: opts(companies, (c) => c.shortName),
+    locations: opts(locations, (l) => l.name),
+    domains: opts(domains, (d) => d.name),
+    natures: opts(natures, (n) => n.name),
+    businesslines: opts(businesslines, (b) => b.name),
+    contractor: selectedContractor
+      ? { id: String(selectedContractor.id), name: contractorLabel(selectedContractor) }
+      : null,
     owners,
   };
 }
 
+type Dicts = Awaited<ReturnType<typeof loadDictionaries>>;
+
+/** Piętnaście filtrów legacy (audyt §1.2), z pisownią legacy: „buissnesline", „tylko OBSSC". */
+function filterFields(d: Dicts): FilterField[] {
+  return [
+    { name: "identifier", label: "Identyfikator" },
+    { name: "type", label: "Typ dokumentu", options: d.documentTypes },
+    { name: "contractNumber", label: "Numer umowy" },
+    { name: "businessline", label: "buissnesline", options: d.businesslines },
+    { name: "status", label: "Status", options: d.statuses },
+    { name: "company", label: "Spółka", options: d.companies },
+    { name: "location", label: "Lokalizacja", options: d.locations },
+    { name: "contractor", label: "Kontrahenci", contractor: { selected: d.contractor } },
+    { name: "owner", label: "Właściciel umowy", options: d.owners },
+    { name: "domain", label: "Rodzaj umowy", options: d.domains },
+    { name: "nature", label: "Charakter umowy", options: d.natures },
+    { name: "dateEnd", label: "Data zakończenia do", date: true },
+    { name: "nip", label: "NIP" },
+    { name: "companyConnected", label: "Podmiot powiązane", checkbox: true },
+    { name: "obsc", label: "tylko OBSSC", checkbox: true },
+  ];
+}
+
 export default async function UmowyPage({ searchParams }: { searchParams: SP }) {
-  const page = Math.max(1, intParam(searchParams.page) ?? 1);
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(MIN_PAGE_SIZE, intParam(searchParams.pageSize) ?? DEFAULT_PAGE_SIZE),
-  );
+  const page = pageParam(searchParams.page);
+  const pageSize = pageSizeParam(searchParams.pageSize, DEFAULT_PAGE_SIZE);
   const where = buildWhere(searchParams);
 
-  const [dicts, total, contracts] = await Promise.all([
-    loadDictionaries(),
+  const [actor, dicts, total, contracts] = await Promise.all([
+    currentActor(),
+    loadDictionaries(intParam(searchParams.contractor)),
     prisma.contract.count({ where }),
     prisma.contract.findMany({
       where,
@@ -173,11 +190,18 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
         nature: true,
         noticePeriod: true,
         contractor: true,
+        parent: { select: { module: true } },
         userAccess: {
           orderBy: { readOnly: "asc" },
           include: { user: { select: ASSIGNEE_SELECT } },
         },
-        _count: { select: { attachments: true, annexes: true } },
+        _count: {
+          select: {
+            attachments: true,
+            // `parentId` niesie też projekty, które stały się tą umową — to nie aneksy.
+            annexes: { where: { module: "CONTRACT", isDeleted: false } },
+          },
+        },
       },
       orderBy: [{ registeredAt: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
@@ -209,22 +233,11 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
     domain: c.domain?.name ?? null,
     formularz: c.tempForm ?? false,
     remarks: c.remarks,
-    hasParent: c.parentId !== null,
+    permission: rowPermission(actor, c),
+    isAnnex: c.parent?.module === "CONTRACT",
     annexCount: c._count.annexes,
     attachmentsCount: c._count.attachments,
   }));
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(total, page * pageSize);
-  const mkPageHref = (p: number) => {
-    const q = new URLSearchParams();
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (typeof value === "string" && value !== "") q.set(key, value);
-    }
-    q.set("page", String(p));
-    return `/umowy?${q.toString()}`;
-  };
 
   return (
     <div>
@@ -240,48 +253,24 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
         </div>
       </div>
 
-      <SearchForm dicts={dicts} />
+      <FilterBar
+        action="/umowy"
+        fields={filterFields(dicts)}
+        values={searchParams}
+        defaultPageSize={DEFAULT_PAGE_SIZE}
+        submitLabel="szukaj"
+        columns={6}
+      />
 
       <ContractsTable contracts={rows} />
 
-      <div className="mt-4 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>
-          {total > 0 ? (
-            <>
-              Pokazano{" "}
-              <strong className="text-foreground">
-                {from}–{to}
-              </strong>{" "}
-              z <strong className="text-foreground">{total}</strong>
-            </>
-          ) : (
-            "Brak wyników"
-          )}
-        </span>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            {page > 1 && (
-              <Link
-                href={mkPageHref(page - 1)}
-                className="rounded-md border px-3 py-1 transition hover:bg-muted"
-              >
-                ← Poprzednia
-              </Link>
-            )}
-            <span className="px-1">
-              Strona {page} z {totalPages}
-            </span>
-            {page < totalPages && (
-              <Link
-                href={mkPageHref(page + 1)}
-                className="rounded-md border px-3 py-1 transition hover:bg-muted"
-              >
-                Następna →
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
+      <Pagination
+        basePath="/umowy"
+        searchParams={searchParams}
+        page={page}
+        pageSize={pageSize}
+        total={total}
+      />
     </div>
   );
 }

@@ -1,12 +1,26 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ClickableRow } from "@/components/ui/clickable-row";
+import { ColumnChooser } from "@/components/ui/column-chooser";
+import { Cell, DataTable, ListedNames, Truncated } from "@/components/ui/data-table";
 import { projectStatusTone } from "@/lib/contract-status";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
+import {
+  PROJECT_COLUMN_DEFS,
+  PROJECT_COLUMN_STORAGE_KEY,
+  type ProjectColumnId,
+} from "@/lib/projekty-columns";
 
-// Wiersz projektu zserializowany po stronie serwera. Kolumny stałe (bez chooser'a —
-// legacy nie dokumentuje panelu wyboru kolumn dla siatki Projektów, w przeciwieństwie
-// do Umów), 1:1 z audytem (historia_wersji/audyt_legacy_strony.md, sekcja 2.3).
+// Lista Projektów — osiem kolumn legacy (audyt §2.3) plus opcjonalna „Umowa".
+// Trzy z nich („Ostatnia notatka", „Opiniujący", „Wysł. do podp.") to elementy obiegu,
+// których lista Umów nie ma.
+
+export interface ProjectReviewer {
+  name: string;
+  /** Opiniujący, który już odpowiedział. Oczekujący są wyszarzeni — to oni wstrzymują obieg. */
+  answered: boolean;
+}
+
 export interface ProjectRow {
   id: number;
   identifier: string;
@@ -14,82 +28,98 @@ export interface ProjectRow {
   owners: string[];
   contractors: string[];
   subject: string | null;
-  lastNote: string | null;
-  reviewer: string | null;
+  lastNote: { body: string | null; createdAt: string } | null;
+  reviewers: ProjectReviewer[];
   sentToSign: string | null;
+  /** Umowa, którą projekt się stał (`parent` z modułu CONTRACT). */
+  contract: { id: number; identifier: string } | null;
 }
 
-function Truncated({ text }: { text: string | null }) {
-  if (!text) return <>—</>;
-  return <span className="block max-w-[16rem] whitespace-normal break-words">{text}</span>;
-}
+const TABLE_ID = "projekty-table";
 
-function ListedNames({ names }: { names: string[] }) {
-  if (names.length === 0) return <>—</>;
-  const [first, ...rest] = names;
-  return (
-    <span title={names.join(", ")}>
-      {first}
-      {rest.length > 0 && <span className="text-muted-foreground"> +{rest.length}</span>}
-    </span>
-  );
+function cellFor(col: ProjectColumnId, p: ProjectRow) {
+  switch (col) {
+    case "identifier":
+      return (
+        <span className="flex flex-wrap items-center gap-1">
+          <Link href={`/projekty/${p.id}`} className="font-medium text-primary hover:underline">
+            {p.identifier}
+          </Link>
+          {p.statusName === null && <Badge tone="warning">brak statusu</Badge>}
+        </span>
+      );
+    case "status":
+      return p.statusName ? (
+        <Badge tone={projectStatusTone(p.statusName)}>{p.statusName}</Badge>
+      ) : (
+        "—"
+      );
+    case "owners":
+      return <ListedNames names={p.owners} />;
+    case "contractors":
+      return <ListedNames names={p.contractors} />;
+    case "subject":
+      return <Truncated text={p.subject} />;
+    case "lastNote":
+      return (
+        <Truncated
+          text={p.lastNote?.body ?? null}
+          title={p.lastNote ? formatDateTime(p.lastNote.createdAt) : undefined}
+        />
+      );
+    case "reviewers":
+      if (p.reviewers.length === 0) return "—";
+      return (
+        <span>
+          {p.reviewers.map((r, i) => (
+            <span
+              key={`${r.name}-${i}`}
+              className={r.answered ? undefined : "text-muted-foreground"}
+              title={r.answered ? "Zaopiniowano" : "Oczekuje"}
+            >
+              {r.name}
+              {i < p.reviewers.length - 1 ? ", " : ""}
+            </span>
+          ))}
+        </span>
+      );
+    case "sentToSign":
+      return <span className="tabular-nums">{formatDate(p.sentToSign)}</span>;
+    case "contract":
+      return p.contract ? (
+        <Link href={`/umowy/${p.contract.id}`} className="text-primary hover:underline">
+          {p.contract.identifier}
+        </Link>
+      ) : (
+        "—"
+      );
+  }
 }
 
 export function ProjectsTable({ projects }: { projects: ProjectRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border shadow-sm">
-      <table className="w-full text-xs">
-        <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-          <tr>
-            <th className="px-2 py-1.5 font-semibold">Identyfikator</th>
-            <th className="px-2 py-1.5 font-semibold">Status</th>
-            <th className="px-2 py-1.5 font-semibold">Właściciel umowy</th>
-            <th className="px-2 py-1.5 font-semibold">Kontrahenci</th>
-            <th className="px-2 py-1.5 font-semibold">Przedmiot umowy</th>
-            <th className="px-2 py-1.5 font-semibold">Ostatnia notatka</th>
-            <th className="px-2 py-1.5 font-semibold">Opiniujący</th>
-            <th className="px-2 py-1.5 font-semibold">Wysł. do podp.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {projects.length === 0 && (
-            <tr>
-              <td colSpan={8} className="px-3 py-12 text-center text-muted-foreground">
-                <p className="font-medium text-foreground">Brak projektów spełniających kryteria</p>
-                <p className="mt-1 text-sm">Zmień lub wyczyść filtry wyszukiwania powyżej.</p>
-              </td>
-            </tr>
-          )}
-          {projects.map((p) => (
-            <ClickableRow key={p.id} href={`/projekty/${p.id}`}>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <Link href={`/projekty/${p.id}`} className="font-medium text-primary hover:underline">
-                  {p.identifier}
-                </Link>
-              </td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <Badge tone={projectStatusTone(p.statusName)}>{p.statusName ?? "—"}</Badge>
-              </td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <ListedNames names={p.owners} />
-              </td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <ListedNames names={p.contractors} />
-              </td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <Truncated text={p.subject} />
-              </td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <Truncated text={p.lastNote} />
-              </td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">{p.reviewer ?? "—"}</td>
-              <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                <span className="tabular-nums">{formatDate(p.sentToSign)}</span>
-              </td>
-            </ClickableRow>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      <ColumnChooser
+        tableId={TABLE_ID}
+        storageKey={PROJECT_COLUMN_STORAGE_KEY}
+        columns={PROJECT_COLUMN_DEFS}
+      />
+      <DataTable
+        id={TABLE_ID}
+        columns={PROJECT_COLUMN_DEFS}
+        isEmpty={projects.length === 0}
+        emptyTitle="Brak projektów spełniających kryteria."
+      >
+        {projects.map((p) => (
+          <ClickableRow key={p.id} href={`/projekty/${p.id}`}>
+            {PROJECT_COLUMN_DEFS.map((col) => (
+              <Cell key={col.id} col={col.id}>
+                {cellFor(col.id, p)}
+              </Cell>
+            ))}
+          </ClickableRow>
+        ))}
+      </DataTable>
     </div>
   );
 }

@@ -39,13 +39,33 @@ export async function requireActor(): Promise<Actor> {
   return actor;
 }
 
+/**
+ * Legacy `edittable = 0` freezes a record — 6 829 of 20 624 in the dump. A frozen record
+ * is read-only for everyone except an administrator (docs/features/03, 09).
+ */
 export async function canEditContract(actor: Actor, contractId: number): Promise<boolean> {
   if (actor.isAdmin) return true;
   const grant = await prisma.contractUser.findUnique({
     where: { contractId_userId: { contractId, userId: actor.id } },
-    select: { readOnly: true },
+    select: { readOnly: true, contract: { select: { isEditable: true } } },
   });
-  return grant !== null && !grant.readOnly;
+  return grant !== null && !grant.readOnly && grant.contract.isEditable;
+}
+
+export type RowPermission = "edit" | "read" | "frozen";
+
+/**
+ * The same rule as `canEditContract`, over a row already loaded with its assignment list —
+ * for the register's "Uprawnienia" column, where one query per row is not an option.
+ */
+export function rowPermission(
+  actor: Actor | null,
+  row: { isEditable: boolean; userAccess: readonly { userId: number; readOnly: boolean }[] },
+): RowPermission {
+  if (actor?.isAdmin) return "edit";
+  const grant = actor ? row.userAccess.find((a) => a.userId === actor.id) : undefined;
+  if (!grant || grant.readOnly) return "read";
+  return row.isEditable ? "edit" : "frozen";
 }
 
 /** Deleting is the same right as editing — legacy has no separate delete grant. */

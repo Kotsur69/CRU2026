@@ -20,10 +20,13 @@ export async function GET(req: NextRequest) {
 
   const q = (req.nextUrl.searchParams.get("q") ?? "").trim();
   if (q.length < MIN_QUERY) return NextResponse.json({ items: [] });
+  // Filtry rejestrów szukają też firm usuniętych — wiszą na nich historyczne umowy.
+  // Formularz umowy (bez `all`) podpowiada wyłącznie firmy żywe.
+  const includeDeleted = req.nextUrl.searchParams.get("all") === "1";
 
   const rows = await prisma.contractor.findMany({
     where: {
-      isDeleted: false,
+      ...(includeDeleted ? {} : { isDeleted: false }),
       OR: [
         { shortName: { contains: q, mode: "insensitive" } },
         { fullName: { contains: q, mode: "insensitive" } },

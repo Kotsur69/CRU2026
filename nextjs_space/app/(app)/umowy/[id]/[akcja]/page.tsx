@@ -6,5 +6,5 @@ export default function UmowaAkcjaPage(props: {
   params: { id: string; akcja: string };
   searchParams: Record<string, string | undefined>;
 }) {
-  return <RecordActionPage {...props} basePath="/umowy" />;
+  return <RecordActionPage {...props} module="CONTRACT" />;
 }

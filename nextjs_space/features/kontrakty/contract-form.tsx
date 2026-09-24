@@ -8,6 +8,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { CONTROL_CLASS, FormRow, FormSection, YesNoRadio } from "@/components/ui/form";
 import { BLANK_OPTION_NAME, type FormDictionaries, type Option } from "@/lib/contracts/dictionaries";
 import type { ContractFormValues } from "@/lib/contracts/form-schema";
+import { riskLetterMismatch } from "@/lib/contracts/risk-grammar";
 import { saveContract, type SaveContractState, type SaveMode } from "./actions";
 import { ContractorPicker, type ContractorOption } from "./contractor-picker";
 import { PeopleField } from "./people-field";
@@ -73,6 +74,28 @@ export function ContractForm(props: ContractFormProps) {
   const [preview, setPreview] = useState<FormData | null>(null);
 
   const err = (field: string) => state.errors[field];
+
+  // Dział ryzyka: litera numeru to inicjał rodzaju. Niezgodność tylko ostrzega — trzy
+  // rekordy legacy ją mają, a numeru z dokumentów kontrahenta nie zmieniamy
+  // (docs/features/08).
+  const isRisk = props.registerKind === "RISK";
+  const riskWarningFor = (identifier: string | null, domainId: string | null) => {
+    if (!isRisk || !domainId) return null;
+    const domain = dicts.domains.find((d) => d.id === domainId);
+    return domain
+      ? riskLetterMismatch(identifier, { id: Number(domain.id), name: domain.name })
+      : null;
+  };
+  const [riskWarning, setRiskWarning] = useState(() =>
+    riskWarningFor(values.identifier, values.domainId === null ? null : String(values.domainId)),
+  );
+  const readRiskWarning = () => {
+    const form = formRef.current;
+    if (!form) return null;
+    const field = (name: string) =>
+      (form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null)?.value ?? null;
+    return riskWarningFor(field("identifier") ?? values.identifier, field("domainId"));
+  };
   const personName = (id: number) =>
     dicts.people.find((p) => p.id === String(id))?.name ?? `#${id}`;
 
@@ -121,7 +144,10 @@ export function ContractForm(props: ContractFormProps) {
       <form
         ref={formRef}
         action={formAction}
-        onInput={() => setDirty(true)}
+        onInput={() => {
+          setDirty(true);
+          if (isRisk) setRiskWarning(readRiskWarning());
+        }}
         hidden={preview !== null}
         className="space-y-4"
       >
@@ -251,6 +277,14 @@ export function ContractForm(props: ContractFormProps) {
             value={values.domainId}
             error={err("domainId")}
           />
+          {riskWarning && (
+            <p
+              role="status"
+              className="rounded-md border border-amber-600/30 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+            >
+              {riskWarning}. Zapis jest możliwy — numer rekordu się nie zmieni.
+            </p>
+          )}
           <FormRow label="Przedmiot umowy" htmlFor="description" error={err("description")}>
             <textarea
               id="description"

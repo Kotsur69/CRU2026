@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { userLabel } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { Section } from "@/components/ui/section";
 
 export const dynamic = "force-dynamic";
 
@@ -15,17 +16,6 @@ const MEMBER_SELECT = {
   isAdmin: true,
   isPlaceholder: true,
 } as const;
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg border bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 export default async function GrupaPage({ params }: { params: { id: string } }) {
   // Route params are untrusted: the legacy primary key is an integer, nothing else.

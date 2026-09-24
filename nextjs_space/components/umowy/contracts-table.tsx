@@ -1,17 +1,19 @@
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { ClickableRow } from "@/components/ui/clickable-row";
+import { ColumnChooser } from "@/components/ui/column-chooser";
+import { Cell, DataTable, ListedNames, Truncated } from "@/components/ui/data-table";
 import { statusTone, endUrgency } from "@/lib/contract-status";
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { COLUMN_DEFS, type ColumnId } from "@/lib/umowy-columns";
-import { ColumnChooserPanel, useColumnVisibility } from "./column-chooser";
+import { COLUMN_DEFS, COLUMN_STORAGE_KEY, type ColumnId } from "@/lib/umowy-columns";
+import type { RowPermission } from "@/lib/authz";
 
-// Wiersz umowy zserializowany po stronie serwera (Decimal/Date -> string, żeby bezpiecznie
-// przejść granicę Server -> Client Component).
+/**
+ * Lista Umów. Tabela renderuje się na serwerze ze wszystkimi kolumnami; wybór widocznych
+ * robi wyspa kliencka `ColumnChooser`, więc formatowanie nie jedzie do przeglądarki.
+ */
+
 export interface ContractRow {
   id: number;
   identifier: string;
@@ -36,10 +38,15 @@ export interface ContractRow {
   domain: string | null;
   formularz: boolean;
   remarks: string | null;
-  hasParent: boolean;
+  permission: RowPermission;
+  /** Rekord jest aneksem innej umowy. */
+  isAnnex: boolean;
+  /** Aneksy tej umowy — bez projektów, które też wiszą na `parentId` (docs/features/07). */
   annexCount: number;
   attachmentsCount: number;
 }
+
+const TABLE_ID = "umowy-table";
 
 function IconPaperclip() {
   return (
@@ -65,29 +72,17 @@ function FlagMark({ on }: { on: boolean }) {
   );
 }
 
-function Truncated({ text, className }: { text: string | null; className?: string }) {
-  if (!text) return <>—</>;
-  return (
-    <span className={cn("block max-w-[14rem] whitespace-normal break-words", className)}>
-      {text}
-    </span>
-  );
-}
-
-function ListedNames({ names }: { names: string[] }) {
-  if (names.length === 0) return <>—</>;
-  const [first, ...rest] = names;
-  return (
-    <span title={names.join(", ")}>
-      {first}
-      {rest.length > 0 && <span className="text-muted-foreground"> +{rest.length}</span>}
-    </span>
-  );
-}
+const PERMISSION: Record<RowPermission, { label: string; tone: "success" | "neutral" | "warning"; title: string }> = {
+  edit: { label: "edycja", tone: "success", title: "Możesz edytować ten rekord" },
+  read: { label: "odczyt", tone: "neutral", title: "Podgląd bez prawa edycji" },
+  frozen: {
+    label: "zamrożony",
+    tone: "warning",
+    title: "Rekord zamrożony w legacy (edittable = 0) — edytuje tylko administrator",
+  },
+};
 
 function cellFor(col: ColumnId, c: ContractRow) {
-  const end = endUrgency(c.dateEnd ? new Date(c.dateEnd) : null, c.statusName);
-
   switch (col) {
     case "identifier":
       return (
@@ -110,20 +105,21 @@ function cellFor(col: ColumnId, c: ContractRow) {
     case "nature":
       return c.nature ?? "—";
     case "subject":
-      return <Truncated text={c.subject} />;
+      return <Truncated text={c.subject} className="max-w-[14rem]" />;
     case "dateStart":
       return <span className="tabular-nums">{formatDate(c.dateStart)}</span>;
-    case "dateEnd":
-      return c.dateEnd ? (
+    case "dateEnd": {
+      if (!c.dateEnd) return "—";
+      const end = endUrgency(new Date(c.dateEnd), c.statusName);
+      return (
         <div className="flex flex-col items-start gap-1">
           <span className={cn("tabular-nums", end?.tone === "danger" && "font-medium text-red-700")}>
             {formatDate(c.dateEnd)}
           </span>
           {end?.label && <Badge tone={end.tone}>{end.label}</Badge>}
         </div>
-      ) : (
-        "—"
       );
+    }
     case "noticePeriod":
       return c.noticePeriod ?? "—";
     case "amount":
@@ -139,21 +135,23 @@ function cellFor(col: ColumnId, c: ContractRow) {
     case "contractors":
       return <ListedNames names={c.contractors} />;
     case "otherAmountDesc":
-      return <Truncated text={c.otherAmountDesc} />;
+      return <Truncated text={c.otherAmountDesc} className="max-w-[14rem]" />;
     case "domain":
       return c.domain ?? "—";
     case "formularz":
       return <FlagMark on={c.formularz} />;
     case "remarks":
-      return <Truncated text={c.remarks} />;
-    case "permition":
+      return <Truncated text={c.remarks} className="max-w-[14rem]" />;
+    case "permition": {
+      const p = PERMISSION[c.permission];
       return (
-        <span className="text-xs text-muted-foreground" title="Moduł uprawnień w budowie">
-          —
+        <span title={p.title}>
+          <Badge tone={p.tone}>{p.label}</Badge>
         </span>
       );
+    }
     case "annex":
-      if (c.hasParent) {
+      if (c.isAnnex) {
         return (
           <Badge tone="info" className="gap-1">
             <IconLink /> Aneks
@@ -181,118 +179,35 @@ function cellFor(col: ColumnId, c: ContractRow) {
   }
 }
 
-const RIGHT_ALIGN: ColumnId[] = ["amount"];
-const CENTER_ALIGN: ColumnId[] = ["obsc", "companyConnected", "formularz"];
-
-// Rozmiar panelu (2 kolumny checkboxów) — używany do decyzji, w którą stronę go otworzyć,
-// żeby zawsze mieścił się w oknie niezależnie od miejsca kliknięcia.
-const PANEL_WIDTH = 432;
-const PANEL_HEIGHT = 520;
-
-interface MenuPlacement {
-  open: boolean;
-  left?: number;
-  right?: number;
-  top?: number;
-  bottom?: number;
-}
-
 export function ContractsTable({ contracts }: { contracts: ContractRow[] }) {
-  const { visible, toggle } = useColumnVisibility();
-  const [menu, setMenu] = useState<MenuPlacement>({ open: false });
-
-  const columns = COLUMN_DEFS.filter((c) => visible.has(c.id));
-
-  const openMenuAt = (clientX: number, clientY: number) => {
-    const openLeft = clientX + PANEL_WIDTH > window.innerWidth;
-    const openUp = clientY + PANEL_HEIGHT > window.innerHeight;
-    setMenu({
-      open: true,
-      left: openLeft ? undefined : clientX,
-      right: openLeft ? window.innerWidth - clientX : undefined,
-      top: openUp ? undefined : clientY,
-      bottom: openUp ? window.innerHeight - clientY : undefined,
-    });
-  };
-
   return (
     <div>
-      <div className="mb-2 flex justify-end">
-        <button
-          type="button"
-          onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            openMenuAt(rect.left, rect.bottom + 4);
-          }}
-          className="rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
-        >
-          Kolumny
-        </button>
-      </div>
-
-      <div
-        className="overflow-x-auto rounded-lg border shadow-sm"
-        onContextMenu={(e) => {
-          e.preventDefault();
-          openMenuAt(e.clientX, e.clientY);
-        }}
-      >
-        <table className="w-full text-xs">
-          <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr>
-              {columns.map((col) => (
-                <th
-                  key={col.id}
-                  className={cn(
-                    "px-2 py-1.5 font-semibold",
-                    RIGHT_ALIGN.includes(col.id) && "text-right",
-                    CENTER_ALIGN.includes(col.id) && "text-center",
-                  )}
-                >
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {contracts.length === 0 && (
-              <tr>
-                <td colSpan={columns.length} className="px-3 py-12 text-center text-muted-foreground">
-                  <p className="font-medium text-foreground">Brak umów spełniających kryteria</p>
-                  <p className="mt-1 text-sm">Zmień lub wyczyść filtry wyszukiwania powyżej.</p>
-                </td>
-              </tr>
-            )}
-            {contracts.map((c) => (
-              <ClickableRow key={c.id} href={`/umowy/${c.id}`}>
-                {columns.map((col) => (
-                  <td
-                    key={col.id}
-                    className={cn(
-                      "whitespace-normal break-words px-2 py-1.5 align-top",
-                      RIGHT_ALIGN.includes(col.id) && "text-right",
-                      CENTER_ALIGN.includes(col.id) && "text-center",
-                    )}
-                  >
-                    {cellFor(col.id, c)}
-                  </td>
-                ))}
-              </ClickableRow>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <ColumnChooserPanel
-        open={menu.open}
-        left={menu.left}
-        right={menu.right}
-        top={menu.top}
-        bottom={menu.bottom}
-        visible={visible}
-        onToggle={toggle}
-        onClose={() => setMenu((m) => ({ ...m, open: false }))}
+      <ColumnChooser
+        tableId={TABLE_ID}
+        storageKey={COLUMN_STORAGE_KEY}
+        columns={COLUMN_DEFS.map(({ id, label, defaultVisible, locked }) => ({
+          id,
+          label,
+          defaultVisible,
+          locked,
+        }))}
       />
+      <DataTable
+        id={TABLE_ID}
+        columns={COLUMN_DEFS}
+        isEmpty={contracts.length === 0}
+        emptyTitle="Brak umów spełniających kryteria."
+      >
+        {contracts.map((c) => (
+          <ClickableRow key={c.id} href={`/umowy/${c.id}`}>
+            {COLUMN_DEFS.map((col) => (
+              <Cell key={col.id} col={col.id} align={col.align}>
+                {cellFor(col.id, c)}
+              </Cell>
+            ))}
+          </ClickableRow>
+        ))}
+      </DataTable>
     </div>
   );
 }

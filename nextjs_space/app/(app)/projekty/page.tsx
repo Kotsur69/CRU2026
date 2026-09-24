@@ -2,45 +2,44 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buttonClass } from "@/components/ui/button";
+import { FilterBar, type FilterField } from "@/components/ui/filter-bar";
+import { Pagination } from "@/components/ui/pagination";
 import { contractorLabel, userLabel } from "@/lib/format";
+import { intParam, pageParam, pageSizeParam } from "@/lib/utils";
 import { ASSIGNEE_SELECT, loadOwnerOptions } from "@/lib/contract-access";
-import { SearchForm } from "@/features/projekty/search-form";
+import { registerWhere } from "@/lib/contracts/scope";
 import { ProjectsTable, type ProjectRow } from "@/components/projekty/projects-table";
 
 export const dynamic = "force-dynamic";
 
 type SP = Record<string, string | undefined>;
 
-const MAX_PAGE_SIZE = 500;
-const MIN_PAGE_SIZE = 10;
-const DEFAULT_PAGE_SIZE = 15;
+const DEFAULT_PAGE_SIZE = 25;
 
-/** Query-string values are untrusted: only a clean positive integer is accepted. */
-function intParam(value: string | undefined): number | undefined {
-  if (!value) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
+/**
+ * Zbiór roboczy: w toku, wysłane do podpisu i oba statusy obiegu FAU (legacy id 4, 7,
+ * 12, 13). 78% rejestru to „Projekt - zakończony", więc filtr „tylko w toku" zawęża
+ * listę do tego, nad czym ktoś jeszcze pracuje (docs/features/07).
+ */
+const IN_PROGRESS_STATUS_IDS = [4, 7, 12, 13];
 
-// A project is not a separate table in the legacy data: it is a row of `contract`
-// whose status carries the `project` discriminator (see the audit, section 2).
-// Every filter therefore targets Contract directly.
+// Projekt nie ma własnej tabeli: to wiersz `contract` z modułem PROJECT (docs/features/01).
 function buildWhere(sp: SP): Prisma.ContractWhereInput {
-  const and: Prisma.ContractWhereInput[] = [
-    // Legacy soft delete — deleted rows never appear in the register.
-    { isDeleted: false },
-    { status: { kind: "PROJECT" } },
-  ];
+  const and: Prisma.ContractWhereInput[] = registerWhere("PROJECT");
 
-  // The form offers two identifier fields; both search the one legacy column.
-  const identifier = sp.identifier || sp.contractIdentifier;
-  if (identifier) and.push({ identifier: { contains: identifier, mode: "insensitive" } });
-  if (sp.contractReference) {
-    and.push({ contractReference: { contains: sp.contractReference, mode: "insensitive" } });
+  if (sp.identifier) and.push({ identifier: { contains: sp.identifier, mode: "insensitive" } });
+  // `identifier2` z legacy (Q13): numer umowy, którą projekt się stał — `parentId` na
+  // projekcie wskazuje wynikową umowę (docs/features/07).
+  if (sp.identifier2) {
+    and.push({ parent: { identifier: { contains: sp.identifier2, mode: "insensitive" } } });
+  }
+  if (sp.contractNumber) {
+    and.push({ contractReference: { contains: sp.contractNumber, mode: "insensitive" } });
   }
 
   const status = intParam(sp.status);
   if (status !== undefined) and.push({ statusId: status });
+  if (sp.inProgress === "1") and.push({ statusId: { in: IN_PROGRESS_STATUS_IDS } });
 
   // Owners are the project's assignees; `onlyRead` grades their rights, it does not
   // decide who counts as an owner (see lib/contract-access.ts).
@@ -78,8 +77,8 @@ function buildWhere(sp: SP): Prisma.ContractWhereInput {
 }
 
 /** Dictionary options for the filter form. Ids are stringified for the select values. */
-async function loadDictionaries() {
-  const [documentTypes, statuses, companies, locations, domains, businesslines, contractors, owners] =
+async function loadDictionaries(contractorId: number | undefined) {
+  const [documentTypes, statuses, companies, locations, domains, businesslines, selected, owners] =
     await Promise.all([
       prisma.documentType.findMany({
         where: { active: true },
@@ -105,59 +104,105 @@ async function loadDictionaries() {
         where: { active: true },
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
-      prisma.contractor.findMany({
-        where: { isDeleted: false },
-        orderBy: [{ shortName: "asc" }, { fullName: "asc" }],
-        select: { id: true, shortName: true, fullName: true },
-      }),
+      contractorId === undefined
+        ? null
+        : prisma.contractor.findUnique({
+            where: { id: contractorId },
+            select: { id: true, shortName: true, fullName: true },
+          }),
       loadOwnerOptions(),
     ]);
 
+  const opts = <T extends { id: number }>(rows: T[], name: (row: T) => string) =>
+    rows.map((row) => ({ id: String(row.id), name: name(row) }));
+
   return {
-    documentTypes: documentTypes.map((d) => ({ id: String(d.id), name: d.name })),
-    statuses: statuses.map((s) => ({ id: String(s.id), name: s.name })),
-    companies: companies.map((c) => ({ id: String(c.id), name: c.shortName })),
-    locations: locations.map((l) => ({ id: String(l.id), name: l.name })),
-    domains: domains.map((d) => ({ id: String(d.id), name: d.name })),
-    businesslines: businesslines.map((b) => ({ id: String(b.id), name: b.name })),
-    contractors: contractors.map((k) => ({ id: String(k.id), name: contractorLabel(k) })),
+    documentTypes: opts(documentTypes, (d) => d.name),
+    statuses: opts(statuses, (s) => s.name),
+    companies: opts(companies, (c) => c.shortName),
+    locations: opts(locations, (l) => l.name),
+    domains: opts(domains, (d) => d.name),
+    businesslines: opts(businesslines, (b) => b.name),
+    contractor: selected ? { id: String(selected.id), name: contractorLabel(selected) } : null,
     owners,
   };
 }
 
-export default async function ProjektyPage({ searchParams }: { searchParams: SP }) {
-  const page = Math.max(1, intParam(searchParams.page) ?? 1);
-  const pageSize = Math.min(
-    MAX_PAGE_SIZE,
-    Math.max(MIN_PAGE_SIZE, intParam(searchParams.pageSize) ?? DEFAULT_PAGE_SIZE),
+type Dicts = Awaited<ReturnType<typeof loadDictionaries>>;
+
+/**
+ * Trzynaście filtrów legacy (audyt §2.2). Względem Umów brak „Data zakończenia",
+ * „Charakter umowy" i „tylko OBSSC", doszedł `identifier2`. „tylko w toku" jest nasze.
+ */
+function filterFields(d: Dicts): FilterField[] {
+  return [
+    { name: "identifier", label: "Identyfikator" },
+    {
+      name: "identifier2",
+      label: "Identyfikator umowy",
+      hint: "Numer umowy, którą projekt się stał",
+    },
+    { name: "contractNumber", label: "Numer umowy" },
+    { name: "type", label: "Typ dokumentu", options: d.documentTypes },
+    { name: "businessline", label: "buissnesline", options: d.businesslines },
+    { name: "status", label: "Status", options: d.statuses },
+    { name: "company", label: "Spółka", options: d.companies },
+    { name: "location", label: "Lokalizacja", options: d.locations },
+    { name: "contractor", label: "Kontrahenci", contractor: { selected: d.contractor } },
+    { name: "owner", label: "Właściciel umowy", options: d.owners },
+    { name: "domain", label: "Rodzaj umowy", options: d.domains },
+    { name: "nip", label: "NIP" },
+    { name: "companyConnected", label: "Podmiot powiązane", checkbox: true },
+    { name: "inProgress", label: "tylko w toku", checkbox: true },
+  ];
+}
+
+/**
+ * „Ostatnia notatka" to najnowsze dziecko każdego wiersza — klasyczne N+1. Dwa zapytania
+ * na stronę niezależnie od jej rozmiaru: najwyższe id notatki na projekt, potem treści.
+ */
+async function loadLastNotes(ids: number[]) {
+  if (ids.length === 0) return new Map<number, { body: string | null; createdAt: string }>();
+  const latest = await prisma.remark.groupBy({
+    by: ["contractId"],
+    where: { contractId: { in: ids }, active: true },
+    _max: { id: true },
+  });
+  const noteIds = latest.map((l) => l._max.id).filter((id): id is number => id !== null);
+  const notes = await prisma.remark.findMany({
+    where: { id: { in: noteIds } },
+    select: { contractId: true, body: true, createdAt: true },
+  });
+  return new Map(
+    notes
+      .filter((n): n is typeof n & { contractId: number } => n.contractId !== null)
+      .map((n) => [n.contractId, { body: n.body, createdAt: n.createdAt.toISOString() }]),
   );
+}
+
+export default async function ProjektyPage({ searchParams }: { searchParams: SP }) {
+  const page = pageParam(searchParams.page);
+  const pageSize = pageSizeParam(searchParams.pageSize, DEFAULT_PAGE_SIZE);
   const where = buildWhere(searchParams);
 
   const [dicts, total, projects] = await Promise.all([
-    loadDictionaries(),
+    loadDictionaries(intParam(searchParams.contractor)),
     prisma.contract.count({ where }),
     prisma.contract.findMany({
       where,
       include: {
         status: true,
         contractor: true,
+        parent: { select: { id: true, identifier: true, module: true } },
         userAccess: {
           orderBy: { readOnly: "asc" },
           include: { user: { select: ASSIGNEE_SELECT } },
         },
-        // "Opiniujący" — whoever was asked for an opinion in the FAU round.
+        // „Opiniujący" — prośby aktywne; wycofane (active = false) nie wstrzymują obiegu.
         opinions: {
           where: { active: true },
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, login: true } },
-          },
-        },
-        // Legacy shows the most recent note in the list; the full thread is on the record.
-        remarkEntries: {
-          where: { active: true },
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { body: true },
+          orderBy: { id: "asc" },
+          select: { respondedAt: true, user: { select: ASSIGNEE_SELECT } },
         },
       },
       orderBy: [{ registeredAt: "desc" }, { id: "desc" }],
@@ -166,35 +211,31 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
     }),
   ]);
 
+  const lastNotes = await loadLastNotes(projects.map((p) => p.id));
+
   const rows: ProjectRow[] = projects.map((c) => {
-    const reviewers = c.opinions
-      .map((o) => o.user)
-      .filter((u): u is NonNullable<typeof u> => u !== null)
-      .map(userLabel);
+    const reviewers = new Map<string, boolean>();
+    for (const o of c.opinions) {
+      if (!o.user) continue;
+      const name = userLabel(o.user);
+      reviewers.set(name, (reviewers.get(name) ?? false) || o.respondedAt !== null);
+    }
     return {
       id: c.id,
-      identifier: c.identifier ?? "—",
+      identifier: c.identifier ?? `#${c.id}`,
       statusName: c.status?.name ?? null,
       owners: c.userAccess.map((a) => userLabel(a.user)),
       contractors: c.contractor ? [contractorLabel(c.contractor)] : [],
       subject: c.description,
-      lastNote: c.remarkEntries[0]?.body ?? c.remarks,
-      reviewer: reviewers.length > 0 ? Array.from(new Set(reviewers)).join(", ") : null,
+      lastNote: lastNotes.get(c.id) ?? null,
+      reviewers: [...reviewers].map(([name, answered]) => ({ name, answered })),
       sentToSign: c.sentOn ? c.sentOn.toISOString() : null,
+      contract:
+        c.parent?.module === "CONTRACT"
+          ? { id: c.parent.id, identifier: c.parent.identifier ?? `#${c.parent.id}` }
+          : null,
     };
   });
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = Math.min(total, page * pageSize);
-  const mkPageHref = (p: number) => {
-    const q = new URLSearchParams();
-    for (const [key, value] of Object.entries(searchParams)) {
-      if (typeof value === "string" && value !== "") q.set(key, value);
-    }
-    q.set("page", String(p));
-    return `/projekty?${q.toString()}`;
-  };
 
   return (
     <div>
@@ -210,48 +251,23 @@ export default async function ProjektyPage({ searchParams }: { searchParams: SP 
         </div>
       </div>
 
-      <SearchForm dicts={dicts} />
+      <FilterBar
+        action="/projekty"
+        fields={filterFields(dicts)}
+        values={searchParams}
+        defaultPageSize={DEFAULT_PAGE_SIZE}
+        columns={6}
+      />
 
       <ProjectsTable projects={rows} />
 
-      <div className="mt-4 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-        <span>
-          {total > 0 ? (
-            <>
-              Pokazano{" "}
-              <strong className="text-foreground">
-                {from}–{to}
-              </strong>{" "}
-              z <strong className="text-foreground">{total}</strong>
-            </>
-          ) : (
-            "Brak wyników"
-          )}
-        </span>
-        {totalPages > 1 && (
-          <div className="flex items-center gap-2">
-            {page > 1 && (
-              <Link
-                href={mkPageHref(page - 1)}
-                className="rounded-md border px-3 py-1 transition hover:bg-muted"
-              >
-                ← Poprzednia
-              </Link>
-            )}
-            <span className="px-1">
-              Strona {page} z {totalPages}
-            </span>
-            {page < totalPages && (
-              <Link
-                href={mkPageHref(page + 1)}
-                className="rounded-md border px-3 py-1 transition hover:bg-muted"
-              >
-                Następna →
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
+      <Pagination
+        basePath="/projekty"
+        searchParams={searchParams}
+        page={page}
+        pageSize={pageSize}
+        total={total}
+      />
     </div>
   );
 }

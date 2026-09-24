@@ -23,3 +23,17 @@ export function pageParam(value: string | undefined): number {
 export function pageSizeParam(value: string | undefined, fallback: number): number {
   return Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, intParam(value) ?? fallback));
 }
+
+/** A `YYYY-MM-DD` query value as UTC midnight — `@db.Date` columns compare against that. */
+export function dateParam(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const parsed = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+/** A non-negative amount from the query string; a Polish decimal comma is accepted. */
+export function amountParam(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}

@@ -6,5 +6,5 @@ export default function RyzykoAkcjaPage(props: {
   params: { id: string; akcja: string };
   searchParams: Record<string, string | undefined>;
 }) {
-  return <RecordActionPage {...props} basePath="/ryzyko" />;
+  return <RecordActionPage {...props} module="RISK" />;
 }

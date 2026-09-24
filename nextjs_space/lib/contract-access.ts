@@ -24,12 +24,19 @@ export interface DictOption {
   name: string;
 }
 
-/** Options for the "Właściciel umowy" filter — only people actually assigned somewhere. */
+/**
+ * Options for the "Właściciel umowy" filter — only people actually assigned somewhere.
+ * Legacy marks an inactive account with a `[na]` suffix (audyt §2.3). A placeholder's
+ * activity is unknown rather than false (docs/features/04), so it gets no suffix.
+ */
 export async function loadOwnerOptions(): Promise<DictOption[]> {
   const users = await prisma.user.findMany({
     where: { contractAccess: { some: {} } },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { login: "asc" }],
-    select: ASSIGNEE_SELECT,
+    select: { ...ASSIGNEE_SELECT, active: true, isPlaceholder: true },
   });
-  return users.map((u) => ({ id: String(u.id), name: userLabel(u) }));
+  return users.map((u) => ({
+    id: String(u.id),
+    name: !u.active && !u.isPlaceholder ? `${userLabel(u)} [na]` : userLabel(u),
+  }));
 }

@@ -2,7 +2,7 @@
 id: 07
 title: Rejestr Projekty
 group: B-registers
-status: todo
+status: done
 depends-on: [03, 05]
 legacy-tables: [contract, contract_status, remarks, opinions]
 prisma-models: [Contract, ContractStatus, Remark, Opinion, ContractUser]
@@ -505,3 +505,22 @@ Manual checks:
 4. **Q35 carries over** — legacy's default sort and whether headers were sortable.
    With 78% of this register in one terminal status, the ordering matters more here
    than on Umowy.
+
+## Implementation notes (2026-09-24)
+
+- Spec 05 recipe, scope `registerWhere("PROJECT")`. The 31 status-less records show
+  here with a "brak statusu" badge and sort by date with the rest.
+- **`identifier2`** ("Identyfikator umowy", with a hint) matches `parent.identifier`,
+  the resulting contract (Q13 hypothesis). "tylko w toku" filters statuses 4, 7, 12
+  and 13. Default page size is 25.
+- **"Ostatnia notatka"** takes two queries per page (`groupBy` max id, then the
+  bodies), with the date on hover. The old fallback to `Contract.remarks` is gone:
+  that is "Uwagi", a different field.
+- **"Opiniujący"** reads active requests only; pending names are muted and answered
+  ones plain (`respondedAt`).
+- **Chooser** with nine columns (`lib/projekty-columns.ts`). The optional "Umowa"
+  column links to the resulting contract and is off by default.
+- `lib/contracts/relations.ts` holds `annexesOf`, `projectsFor`, `resultingContract`
+  and `partitionRelations`. The schema documents both meanings of `parentId`.
+- **Not done:** Q39's correction of `plan.md` — it was asked as a question, not
+  requested.

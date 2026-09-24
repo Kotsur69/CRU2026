@@ -18,6 +18,8 @@ export interface ContractActionsProps {
   recordId: number;
   basePath: string;
   canEdit: boolean;
+  /** Legacy `edittable = 0` — rekord zamrożony; edytuje go tylko administrator. */
+  frozen: boolean;
   /** Rekordy Działu ryzyka nie mają aneksów ani projektów aneksu. */
   allowAnnexes: boolean;
 }
@@ -26,6 +28,7 @@ export function ContractActions({
   recordId,
   basePath,
   canEdit,
+  frozen,
   allowAnnexes,
 }: ContractActionsProps) {
   const href = (suffix: string) => `${basePath}/${recordId}/${suffix}`;
@@ -61,6 +64,11 @@ export function ContractActions({
           )}
           <DeleteForm recordId={recordId} />
         </div>
+      ) : frozen ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Rekord zamrożony w systemie legacy — edycję, aneksy i usunięcie może wykonać tylko
+          administrator.
+        </p>
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
           Podgląd bez prawa edycji — rekord mogą zmieniać właściciele z prawem edycji oraz

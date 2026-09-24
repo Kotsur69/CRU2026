@@ -4,6 +4,7 @@ import type { AccessDimension } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { userLabel } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { Field, Section } from "@/components/ui/section";
 
 export const dynamic = "force-dynamic";
 
@@ -64,27 +65,6 @@ async function resolveScopeValues(
   for (const b of lines) put("BUSINESSLINE", b.id, b.name);
 
   return resolved;
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg border bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, children }: { label: string; children?: React.ReactNode }) {
-  const empty = children === null || children === undefined || children === "";
-  return (
-    <div className="grid grid-cols-3 gap-3 border-b border-border/60 py-2 last:border-0">
-      <dt className="col-span-1 text-sm text-muted-foreground">{label}</dt>
-      <dd className="col-span-2 text-sm">{empty ? "—" : children}</dd>
-    </div>
-  );
 }
 
 export default async function DostepPage({ params }: { params: { id: string } }) {

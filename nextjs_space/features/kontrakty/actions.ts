@@ -26,6 +26,7 @@ import {
   loadContractForForm,
 } from "@/lib/contracts/record";
 import { nextAnnexIdentifier, nextRecordIdentifier } from "@/lib/contracts/identifier";
+import { nextRiskIdentifier } from "@/lib/contracts/risk";
 import {
   isRegisterModule,
   MODULE_PATH,
@@ -346,14 +347,23 @@ async function createRecord(
   }
 
   // Numer nadaje serwer — formularz nowego wpisu go nie pokazuje, bo zależy od spółki
-  // i businessline'u wybranych dopiero tutaj.
-  const identifier =
-    values.identifier ??
-    (await nextRecordIdentifier({
-      companyId: values.companyId,
-      businesslineId: values.businesslineId,
-      module: registerKind,
-    }));
+  // i businessline'u wybranych dopiero tutaj. Dział ryzyka ma własną gramatykę
+  // `YYYY/L/NNNN`, gdzie litera pochodzi z rodzaju (docs/features/08).
+  let identifier = values.identifier;
+  if (identifier === null && registerKind === "RISK") {
+    identifier = await nextRiskIdentifier(values.domainId);
+    if (identifier === null) {
+      return {
+        errors: { domainId: "Wybierz rodzaj — od niego zależy litera numeru (np. U dla ugody)." },
+        values: raw,
+      };
+    }
+  }
+  identifier ??= await nextRecordIdentifier({
+    companyId: values.companyId,
+    businesslineId: values.businesslineId,
+    module: registerKind,
+  });
 
   const withCreator: ContractFormValues = {
     ...values,

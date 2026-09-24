@@ -34,16 +34,16 @@ Everything else depends on these. Build in order.
 | 02 | [Identifier grammar and numbering](02-identifier-grammar_done.md) | done | 01 |
 | 03 | [Read authorization](03-read-authorization.md) | todo | 01 |
 | 04 | [Identity and directory](04-identity-directory.md) | todo | — |
-| 05 | [Shared UI consolidation](05-shared-ui.md) | todo | — |
+| 05 | [Shared UI consolidation](05-shared-ui_done.md) | done | — |
 
 ## B. Registers and the contract record
 
 | # | Spec | Status | Depends on |
 |---|---|---|---|
-| 06 | [Umowy register](06-umowy-register.md) | todo | 03, 05 |
-| 07 | [Projekty register](07-projekty-register.md) | todo | 03, 05 |
-| 08 | [Dział ryzyka register](08-ryzyko-register.md) | todo | 03, 05 |
-| 09 | [Contract detail](09-contract-detail.md) | todo | 05 |
+| 06 | [Umowy register](06-umowy-register_done.md) | done | 03, 05 |
+| 07 | [Projekty register](07-projekty-register_done.md) | done | 03, 05 |
+| 08 | [Dział ryzyka register](08-ryzyko-register_done.md) | done | 03, 05 |
+| 09 | [Contract detail](09-contract-detail_done.md) | done | 05 |
 | 10 | [Contract form](10-contract-form.md) | todo | 01, 02 |
 | 11 | [Annexes](11-annexes.md) | todo | 02, 10 |
 | 12 | [Multi-location](12-multi-location.md) | todo | 03, 10 |

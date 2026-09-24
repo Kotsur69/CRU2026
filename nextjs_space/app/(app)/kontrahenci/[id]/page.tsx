@@ -4,32 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { contractorLabel, formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { statusTone } from "@/lib/contract-status";
+import { Field, Section } from "@/components/ui/section";
 
 export const dynamic = "force-dynamic";
 
 /** Ile umów pokazujemy bez przechodzenia do rejestru — kontrahenci mają ich do kilkuset. */
 const CONTRACTS_SHOWN = 100;
-
-function Field({ label, children }: { label: string; children?: React.ReactNode }) {
-  const empty = children === null || children === undefined || children === "";
-  return (
-    <div className="grid grid-cols-3 gap-3 border-b border-border/60 py-2 last:border-0">
-      <dt className="col-span-1 text-sm text-muted-foreground">{label}</dt>
-      <dd className="col-span-2 text-sm">{empty ? "—" : children}</dd>
-    </div>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-lg border bg-card p-5 shadow-sm">
-      <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 export default async function KontrahentPage({ params }: { params: { id: string } }) {
   // Route params are untrusted: the legacy primary key is an integer, nothing else.
