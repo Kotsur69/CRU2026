@@ -592,11 +592,20 @@ export async function ContractPreview({ id, module, showAllAnnexes = false }: Co
           <Field label="Zarejestrowano przez">
             {c.registeredBy && <AccountName user={c.registeredBy} />}
           </Field>
+          {/* Stopka prowadzi do pełnej historii zmian (docs/features/13). */}
           <Field label="Data modyfikacji">
-            {c.modifiedAt && <span className="tabular-nums">{formatDateTime(c.modifiedAt)}</span>}
+            {c.modifiedAt && (
+              <Link href={`${backHref}/${c.id}/historia`} className="tabular-nums text-primary hover:underline">
+                {formatDateTime(c.modifiedAt)}
+              </Link>
+            )}
           </Field>
           <Field label="Modyfikowano przez">
-            {c.modifiedBy && <AccountName user={c.modifiedBy} />}
+            {c.modifiedBy && (
+              <Link href={`${backHref}/${c.id}/historia`} className="text-primary hover:underline">
+                <AccountName user={c.modifiedBy} />
+              </Link>
+            )}
           </Field>
         </dl>
       </Section>

@@ -4,6 +4,7 @@ import { MODULE_PATH, registerOf, type RegisterModule } from "@/lib/contracts/mo
 import { ContractFormPage } from "./form-page";
 import { AcceptanceFormPage } from "./acceptance-form-page";
 import { QuestionPage } from "./question-page";
+import { HistoryPage } from "./history-page";
 
 /**
  * Jedno wejście dla wszystkich akcji rekordu, żeby każdy z trzech rejestrów
@@ -11,7 +12,14 @@ import { QuestionPage } from "./question-page";
  * pięciu identycznych plików tras na moduł.
  */
 
-const ACTIONS = ["edycja", "aneks", "projekt-aneksu", "formularz-akceptacji", "pytanie"] as const;
+const ACTIONS = [
+  "edycja",
+  "aneks",
+  "projekt-aneksu",
+  "formularz-akceptacji",
+  "pytanie",
+  "historia",
+] as const;
 export type RecordAction = (typeof ACTIONS)[number];
 
 function isAction(value: string): value is RecordAction {
@@ -47,5 +55,7 @@ export async function RecordActionPage({ params, searchParams, module }: RecordA
       return <AcceptanceFormPage id={id} basePath={basePath} print={searchParams.druk === "1"} />;
     case "pytanie":
       return <QuestionPage id={id} basePath={basePath} />;
+    case "historia":
+      return <HistoryPage id={id} basePath={basePath} searchParams={searchParams} />;
   }
 }

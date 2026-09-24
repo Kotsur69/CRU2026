@@ -2,7 +2,7 @@
 id: 13
 title: Historia zmian (change log)
 group: C-missing-subsystems
-status: todo
+status: done
 depends-on: [01]
 legacy-tables: [contracthistory]
 prisma-models: [ContractHistory]
@@ -294,3 +294,33 @@ Manual checks:
    exists; not building it speculatively.
 4. **Retention.** 237,405 rows and growing. No retention policy exists and legacy had
    none. Nothing to do now, but spec 32 should note it for backup sizing.
+
+## Implementation notes (2026-09-24)
+
+- **Screen:** `features/kontrakty/history-page.tsx` is the sixth branch of
+  `record-action-page.tsx`, so `/umowy|projekty|ryzyko/[id]/historia` needed no new
+  route files. It inherits the module guard: a record under the wrong register is a
+  404.
+- **Grouping:** by (author, second), in SQL (`date_trunc('second', …)`), paginated by
+  group, default 50. The rows of a page come from one query over the page's time
+  range and are bucketed in memory.
+- **Values:** `renderHistoryValue` in `lib/contracts/history.ts`, pure, is the inverse
+  of `buildSnapshot`. It reads both shapes found in the table: legacy raw ids
+  resolved through the *full* dictionaries (retired entries included; unknown ids
+  show `#9 (usunięty)`) and our own label-valued rows. `giveopinions` resolves to a
+  person, `project` to a module name, `0000-00-00` to "—", flags to Tak/Nie
+  ("nie wskazano" for −1), `salary` is formatted. Text at exactly 50 characters gets
+  an ellipsis whose tooltip explains the legacy `varchar(50)`. There is no restore
+  action anywhere. Long values fold behind `<details>`.
+- **Filters:** field (only columns present on this record), author, date from and to.
+  The empty state is "Brak zapisanej historii zmian." (or "Brak zmian spełniających
+  kryteria." when filtered).
+- **Links:** a "Historia zmian" button in the action bar, visible to every reader
+  since it is not an edit, and the audit footer's "Data modyfikacji" /
+  "Modyfikowano przez".
+- **Tests:** `lib/contracts/history.test.ts` covers resolution, sentinels, the
+  truncation marker, and `giveopinions` written as a raw id.
+- **Read authorization** follows the record. Today every signed-in user reads every
+  record; `canReadContract` belongs to spec 03, which is blocked on Q18.
+- **Open questions** were taken at their recommendations: orphaned rows stay
+  unsurfaced (no global view), and history is not exportable.

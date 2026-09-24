@@ -119,3 +119,150 @@ export function diffSnapshots(before: HistorySnapshot, after: HistorySnapshot): 
   }
   return rows;
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Odczyt — odwrotność `buildSnapshot` (docs/features/13)
+//
+// Wpisy z legacy trzymają przy kolumnach słownikowych surowe id („2" → „3"), nasze
+// zapisy — etykiety („Obowiązująca"). Odczyt przyjmuje oba: liczbę tłumaczy przez pełny
+// słownik (z pozycjami wygaszonymi), tekst pokazuje wprost.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** Etykiety pól z formularza — nie nazwy kolumn MySQL-a. */
+export const HISTORY_COLUMN_LABEL: Record<string, string> = {
+  identifier: "Identyfikator",
+  type_id: "Typ dokumentu",
+  status_id: "Status",
+  company_id: "Spółka",
+  buissnesline_id: "Buissnesline",
+  location_id: "Lokalizacja",
+  domain_id: "Rodzaj umowy",
+  contract_nature_id: "Charakter umowy",
+  trade_id: "Eksport/Import",
+  delivery_id: "Forma doręczenia",
+  notice_period_id: "Okres wypowiedzenia",
+  currency_id: "Waluta",
+  contract_reference: "Numer umowy",
+  description: "Przedmiot umowy",
+  date_begin: "Data zawarcia",
+  date_end: "Data zakończenia",
+  date_send: "Data wysłania do podpisu",
+  date_payment: "Termin płatności",
+  salary: "Wynagrodzenie",
+  specific_salary_terms: "Inne określenie wynagrodzenia",
+  remarks: "Uwagi",
+  companies_connected: "Podmiot powiązane",
+  temp_form: "Formularz",
+  OBSC: "OBSC",
+  descOBSC: "Opis OBSC",
+  insurance_guarantee: "Gwarancja/ubezpieczenie",
+  bill: "Weksel",
+  contractor_id: "Kontrahent",
+  debtor_id: "Dłużnik",
+  giveopinions: "Koordynator obiegu opinii",
+  project: "Moduł",
+  deleted: "Usunięty",
+};
+
+/** Kolumna słownikowa → klucz słownika, którym tłumaczymy id na nazwę. */
+export const HISTORY_DICTIONARY_COLUMN = {
+  type_id: "documentTypes",
+  status_id: "statuses",
+  company_id: "companies",
+  buissnesline_id: "businesslines",
+  location_id: "locations",
+  domain_id: "domains",
+  contract_nature_id: "natures",
+  trade_id: "trades",
+  delivery_id: "deliveryMethods",
+  notice_period_id: "noticePeriods",
+  currency_id: "currencies",
+  contractor_id: "contractors",
+  debtor_id: "contractors",
+  giveopinions: "users",
+} as const;
+
+export type HistoryLookupName = (typeof HISTORY_DICTIONARY_COLUMN)[keyof typeof HISTORY_DICTIONARY_COLUMN];
+export type HistoryLookups = Record<HistoryLookupName, ReadonlyMap<number, string>>;
+
+const FLAG_COLUMNS = new Set([
+  "companies_connected",
+  "temp_form",
+  "OBSC",
+  "insurance_guarantee",
+  "bill",
+  "deleted",
+]);
+const DATE_COLUMNS = new Set(["date_begin", "date_end", "date_send"]);
+/** Pola tekstowe, które legacy zapisywało w `varchar(50)` — dłuższe wartości ucinało. */
+const TEXT_COLUMNS = new Set([
+  "identifier",
+  "contract_reference",
+  "description",
+  "date_payment",
+  "specific_salary_terms",
+  "remarks",
+  "descOBSC",
+]);
+/** `contracthistory.oldvalue/newvalue` to `varchar(50)` w legacy. */
+export const LEGACY_HISTORY_VALUE_LIMIT = 50;
+
+const MODULE_LABEL: Record<string, string> = {
+  "0": "Umowy",
+  "1": "Projekty",
+  "2": "Dział ryzyka",
+  "3": "Eksperyment 2021",
+};
+
+export interface HistoryValue {
+  /** Tekst do pokazania; null = brak wartości („—"). */
+  text: string | null;
+  /** Wartość z legacy mogła zostać ucięta do 50 znaków — nie nadaje się do odtworzenia. */
+  truncated: boolean;
+}
+
+export function isHistoryColumnKnown(column: string): boolean {
+  return column in HISTORY_COLUMN_LABEL;
+}
+
+/**
+ * Wartość wpisu historii w postaci do przeczytania. `formatDate`/`formatMoney` podaje
+ * wywołujący, żeby ten plik został czysty (bez zależności od formatowania i bazy).
+ */
+export function renderHistoryValue(
+  column: string,
+  raw: string | null,
+  lookups: HistoryLookups,
+  format: { date: (iso: string) => string; money: (value: string) => string },
+): HistoryValue {
+  const value = raw?.trim() ?? "";
+  if (value === "" || value === "0000-00-00" || value.startsWith("0000-00-00")) {
+    return { text: null, truncated: false };
+  }
+
+  if (column in HISTORY_DICTIONARY_COLUMN) {
+    if (!/^\d+$/.test(value)) return { text: value, truncated: false }; // nasz zapis: etykieta
+    const id = Number(value);
+    if (id === 0) return { text: null, truncated: false }; // legacy: 0 = brak
+    const lookup = lookups[HISTORY_DICTIONARY_COLUMN[column as keyof typeof HISTORY_DICTIONARY_COLUMN]];
+    return { text: lookup.get(id) ?? `#${id} (usunięty)`, truncated: false };
+  }
+  if (FLAG_COLUMNS.has(column)) {
+    if (value === "1") return { text: "Tak", truncated: false };
+    if (value === "0") return { text: "Nie", truncated: false };
+    if (value === "-1") return { text: "nie wskazano", truncated: false };
+    return { text: value, truncated: false };
+  }
+  if (DATE_COLUMNS.has(column)) {
+    return { text: /^\d{4}-\d{2}-\d{2}/.test(value) ? format.date(value.slice(0, 10)) : value, truncated: false };
+  }
+  if (column === "salary") {
+    return { text: Number.isNaN(Number(value)) ? value : format.money(value), truncated: false };
+  }
+  if (column === "project") return { text: MODULE_LABEL[value] ?? value, truncated: false };
+
+  return {
+    text: value,
+    truncated: TEXT_COLUMNS.has(column) && value.length === LEGACY_HISTORY_VALUE_LIMIT,
+  };
+}

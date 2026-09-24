@@ -54,7 +54,7 @@ Data is imported and complete; there is no UI at all.
 
 | # | Spec | Status | Depends on |
 |---|---|---|---|
-| 13 | [Historia zmian (change log)](13-change-history.md) | todo | 01 |
+| 13 | [Historia zmian (change log)](13-change-history_done.md) | done | 01 |
 | 14 | [Notatki (notes)](14-notes.md) | todo | — |
 | 15 | [Powiadomienia (inbox)](15-notifications.md) | todo | 14 |
 | 16 | [Obieg opinii (FAU workflow)](16-opinion-workflow.md) | todo | 01, 15 |

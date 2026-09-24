@@ -45,6 +45,10 @@ export function ContractActions({
         <Link href={href("pytanie")} className={buttonClass("secondary")}>
           zadaj pytanie
         </Link>
+        {/* Historię czyta każdy, kto widzi rekord — to nie jest edycja (docs/features/13). */}
+        <Link href={href("historia")} className={buttonClass("secondary")}>
+          Historia zmian
+        </Link>
       </div>
 
       {canEdit ? (
