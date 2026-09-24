@@ -68,7 +68,7 @@ Data is imported and complete; there is no UI at all.
 
 | # | Spec | Status | Depends on |
 |---|---|---|---|
-| 20 | [Kontrahenci](20-kontrahenci.md) | todo | 05 |
+| 20 | [Kontrahenci](20-kontrahenci.md) | in-progress | 05 |
 | 21 | [Grupy](21-grupy.md) | in-progress | 03, 04 |
 | 22 | [Lokalizacje](22-lokalizacje_done.md) | done | 03 |
 | 23 | [Dostępy](23-dostepy.md) | todo | 03, 04 |

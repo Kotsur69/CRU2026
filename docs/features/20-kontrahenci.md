@@ -11,6 +11,22 @@ routes: ["/kontrahenci", "/kontrahenci/[id]", "/kontrahenci/nowy", "/api/contrac
 
 # 20 — Kontrahenci
 
+> **Where we stand (2026-09-24): in progress (interrupted).** Everything except merging duplicates is built.
+>
+> - **Done:**
+>   - `/kontrahenci` with the spec's filters plus "duplikaty" and "nieużywane", and a "duplikat NIP (N)" badge;
+>   - `/kontrahenci/[id]` with Dane, Duplikaty, paginated Umowy and Zobowiązania, Dokumenty rejestrowe and Audyt;
+>   - create and edit through one form (`/kontrahenci/nowy`, `/kontrahenci/[id]/edycja`);
+>   - NIP normalisation, and a duplicate check that never silently reuses a live NIP;
+>   - edit, delete and restore for admins only. Q57 is taken at its proposal: anyone signed in can create.
+> - **Not done:**
+>   - the merge action for duplicate-NIP groups;
+>   - the REGON/GUS lookup (spec 30);
+>   - "Dokumenty rejestrowe" does not use spec 18's shared `AttachmentList` yet;
+>   - the forms were not clicked through in a browser after the final rebase.
+> - **Waiting on:** **Q58**. Merging the 177 duplicate-NIP groups reassigns contracts and needs legal sign-off. Q59 is recorded.
+> - **Next step:** a browser check of create, edit, delete and restore on the merged branch, then switch "Dokumenty rejestrowe" to `AttachmentList`. Details are in "Implementation notes" at the end.
+
 ## Why
 
 3,580 counterparties, referenced by **every** record in the register — `contractorId`

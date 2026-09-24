@@ -23,7 +23,7 @@ routes: ["/umowy/[id]", "/api/attachments", "/api/files/[...key]"]
 >   - `scripts/legacy/repair-attachment-paths.ts` for the seven renames (dry run by default, `--apply`);
 >   - a zero-byte class in `yarn db:verify-files`;
 >   - a browser check of list, upload and delete;
->   - the "Dokumenty rejestrowe" list on `/kontrahenci/[id]`, which waits for spec 20 to be merged.
+>   - switch the contractor page's "Dokumenty rejestrowe" section (spec 20, now merged) to the shared `AttachmentList`.
 > - **Waiting on:** Q27 (the missing and zero-byte files), Q28 (orphan files) and Q29. None of them blocks the code.
 > - **Next step:** the repair script, then the verify-files class. Details are in "Implementation notes" at the end.
 
