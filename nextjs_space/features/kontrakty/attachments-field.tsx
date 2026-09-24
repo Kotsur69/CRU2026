@@ -97,6 +97,13 @@ export function AttachmentsField({
     setUploading((prev) => [...prev, ...names]);
 
     for (const file of Array.from(files)) {
+      // Pusty plik to dokument, którego nie ma — serwer i tak go odrzuci, ale nie ma
+      // sensu czekać na to rundę żądania (docs/features/18).
+      if (file.size === 0) {
+        setError(`${file.name}: plik jest pusty (0 B).`);
+        setUploading((prev) => prev.filter((n) => n !== file.name));
+        continue;
+      }
       const body = new FormData();
       body.append("file", file);
       body.append("formSession", formSession);

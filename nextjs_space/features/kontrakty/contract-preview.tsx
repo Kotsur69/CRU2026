@@ -19,6 +19,8 @@ import { buttonClass } from "@/components/ui/button";
 import { ContractActions } from "./contract-actions";
 import { NOTES_SHOWN, NotesThread } from "./notes-thread";
 import { OpinionRound } from "./opinion-round";
+import { AttachmentList } from "@/components/ui/attachment-list";
+import { AttachmentDelete, AttachmentUpload } from "./attachment-controls";
 
 /**
  * Podgląd rekordu `contract` — jeden ekran dla Umów, Projektów i Działu ryzyka
@@ -511,34 +513,22 @@ export async function ContractPreview({
         />
       </Section>
 
-      {/* Załączniki (przez StorageAdapter) */}
-      <Section title="Załączniki">
-        {c.attachments.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Brak załączników.</p>
-        ) : (
-          <ul className="space-y-1 text-sm">
-            {c.attachments.map((a) => (
-              <li key={a.id}>
-                {a.storageKey ? (
-                  <a
-                    href={`/api/files/${encodeURIComponent(a.storageKey)}`}
-                    className="text-primary hover:underline"
-                  >
-                    {a.name ?? a.storageKey}
-                  </a>
-                ) : (
-                  <span>{a.name ?? `#${a.id}`}</span>
-                )}
-                {a.isFinal && (
-                  <Badge tone="brand" className="ml-2">
-                    Wersja ostateczna
-                  </Badge>
-                )}
-              </li>
-            ))}
-          </ul>
+      {/* Załączniki (przez StorageAdapter, docs/features/18). Funkcja „wyślij jako
+          załącznik" świadomie POMINIĘTA — wykluczenie w README. */}
+      <Section title={`Załączniki (${c.attachments.length})`} id="zalaczniki">
+        {canEdit && (
+          <div className="mb-3">
+            <AttachmentUpload contractId={c.id} />
+          </div>
         )}
-        {/* Uwaga: funkcja „wyślij jako załącznik" świadomie POMINIĘTA (wykluczenie w README). */}
+        <AttachmentList
+          attachments={c.attachments}
+          deleteButton={
+            canEdit
+              ? (a) => <AttachmentDelete id={a.id} name={a.name ?? a.storageKey ?? `#${a.id}`} />
+              : undefined
+          }
+        />
       </Section>
 
       {/* Obieg FAU (docs/features/16) — z akcjami na projektach, tylko do odczytu gdzie indziej. */}

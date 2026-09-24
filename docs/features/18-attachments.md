@@ -2,7 +2,7 @@
 id: 18
 title: Załączniki (attachments)
 group: C-missing-subsystems
-status: todo
+status: in-progress
 depends-on: [03]
 legacy-tables: [attachment]
 prisma-models: [Attachment, Contract, Contractor]
@@ -565,3 +565,33 @@ Manual checks:
 4. **Q30 — where do the files live in production?** 49 GB, growing by roughly 3,500
    files a year. Local disk, the Bytom server, SharePoint or S3 — that is spec 32,
    and it blocks on Q4 (where production runs).
+
+## Implementation notes (2026-09-24)
+
+**Status: in progress** — committed mid-work.
+
+Built and typechecked:
+
+- `lib/attachments.ts` (+ tests): `fileKind`, `isInlineRenderable` (PDF and images
+  only), `formatBytes`, `contentDisposition` (UTF-8 filename with an ASCII fallback).
+- `lib/authz.ts` → `canReadContract`: the single hook spec 03 will tighten. Today any
+  signed-in user reads live records; soft-deleted records are admin-only.
+- `GET /api/files/[...key]`: resolves key → `Attachment` row(s) → parent. Contract
+  files need `canReadContract`, contractor files need a session, draft uploads need
+  their `formSession` token, parentless rows are admin-only. Refusal is 404. Served
+  as `attachment` except PDF and images, with `X-Content-Type-Options: nosniff`.
+- `POST /api/attachments` stores `isFinal`, and a draft's link carries its token.
+- `components/ui/attachment-list.tsx`: icon, type and size from storage, a
+  "Wersja ostateczna" badge, "plik pusty (0 B)" / "brak pliku" badges with the
+  download disabled, "data nieznana (import)" for imported rows. Mounted on the
+  record preview with "dodaj plik" (+ "Wersja ostateczna") and "Usuń" for editors
+  (`features/kontrakty/attachment-controls.tsx`).
+- A zero-byte guard in the form's upload field.
+
+Not done yet:
+
+- `scripts/legacy/repair-attachment-paths.ts` (the seven renames).
+- The zero-byte class in `yarn db:verify-files`.
+- Browser verification of the new list, upload and delete.
+- Mounting the list on `/kontrahenci/[id]` as "Dokumenty rejestrowe" (after spec 20
+  merges).

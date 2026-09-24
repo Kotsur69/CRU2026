@@ -59,7 +59,7 @@ Data is imported and complete; there is no UI at all.
 | 15 | [Powiadomienia (inbox)](15-notifications.md) | in-progress | 14 |
 | 16 | [Obieg opinii (FAU workflow)](16-opinion-workflow.md) | in-progress | 01, 15 |
 | 17 | [Formularz akceptacji / MDR](17-acceptance-form.md) | todo | 16 |
-| 18 | [Załączniki (attachments)](18-attachments.md) | todo | 03 |
+| 18 | [Załączniki (attachments)](18-attachments.md) | in-progress | 03 |
 | 19 | [Auto-close and expiry](19-auto-close.md) | todo | 01 |
 
 ## D. Supporting modules

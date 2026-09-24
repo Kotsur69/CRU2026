@@ -52,6 +52,22 @@ export async function requireAdmin(): Promise<Actor> {
 }
 
 /**
+ * Whether the actor may see a record — and everything hanging off it: its files, its
+ * history, its notes. Today every signed-in user may read every live record; the real
+ * visibility rules are docs/features/03, blocked on Q18. This is the one place they will
+ * slot into, so every reader already calls it. Soft-deleted records are for
+ * administrators only.
+ */
+export async function canReadContract(actor: Actor, contractId: number): Promise<boolean> {
+  const contract = await prisma.contract.findUnique({
+    where: { id: contractId },
+    select: { isDeleted: true },
+  });
+  if (!contract) return false;
+  return !contract.isDeleted || actor.isAdmin;
+}
+
+/**
  * Legacy `edittable = 0` freezes a record — 6 829 of 20 624 in the dump. A frozen record
  * is read-only for everyone except an administrator (docs/features/03, 09).
  */
