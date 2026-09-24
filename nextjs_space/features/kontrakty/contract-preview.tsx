@@ -9,11 +9,13 @@ import { currentActor, canEditContract } from "@/lib/authz";
 import { compareIdentifiers } from "@/lib/contracts/identifier";
 import {
   MODULE_PATH,
+  REGISTER_LABEL,
   moduleStatusTone,
   modulePath,
   registerOf,
   type RegisterModule,
 } from "@/lib/contracts/modules";
+import { contractorLabelWithNip } from "@/lib/contractors";
 import { partitionRelations } from "@/lib/contracts/relations";
 import { buttonClass } from "@/components/ui/button";
 import { ContractActions } from "./contract-actions";
@@ -31,12 +33,6 @@ import { AttachmentDelete, AttachmentUpload } from "./attachment-controls";
  * Kolejność pól w sekcjach idzie za audytem (§1.4, 34 pola); pola bez wartości
  * pokazują „—", żeby układ był stały między rekordami.
  */
-
-const MODULE_LABEL: Record<RegisterModule, string> = {
-  CONTRACT: "Umowy",
-  PROJECT: "Projekty",
-  RISK: "Dział ryzyka",
-};
 
 const PERSON = { id: true, firstName: true, lastName: true, login: true } as const;
 
@@ -200,12 +196,8 @@ export async function ContractPreview({
         .sort((a, b) => compareIdentifiers(a.identifier, b.identifier))
     : [];
   const shownAnnexes = showAllAnnexes ? relations.annexes : relations.annexes.slice(0, ANNEXES_SHOWN);
-  const counterparty = c.contractor
-    ? `${contractorLabel(c.contractor)}${c.contractor.vatId ? ` NIP: ${c.contractor.vatId}` : ""}`
-    : null;
-  const debtor = c.debtor
-    ? `${contractorLabel(c.debtor)}${c.debtor.vatId ? ` NIP: ${c.debtor.vatId}` : ""}`
-    : null;
+  const counterparty = c.contractor ? contractorLabelWithNip(c.contractor) : null;
+  const debtor = c.debtor ? contractorLabelWithNip(c.debtor) : null;
   // Obieg FAU: zawsze na projektach, na umowach tylko gdy są wpisy (40 rekordów), w
   // Dziale ryzyka nigdy (docs/features/09).
   const showOpinions = isProject || (!isRisk && (c.opinions.length > 0 || c.acceptanceForm !== null));
@@ -215,7 +207,7 @@ export async function ContractPreview({
       {/* Nagłówek */}
       <div>
         <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground">
-          ← {MODULE_LABEL[module]}
+          ← {REGISTER_LABEL[module]}
         </Link>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <h1 className="font-heading text-2xl font-semibold">{c.identifier ?? `#${c.id}`}</h1>

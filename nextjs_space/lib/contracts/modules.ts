@@ -22,6 +22,13 @@ export const MODULE_PATH: Record<RegisterModule, string> = {
   RISK: "/ryzyko",
 };
 
+/** The register's name as the legacy menu shows it. */
+export const REGISTER_LABEL: Record<RegisterModule, string> = {
+  CONTRACT: "Umowy",
+  PROJECT: "Projekty",
+  RISK: "Dział ryzyka",
+};
+
 export function isRegisterModule(value: string): value is RegisterModule {
   return (REGISTER_MODULES as readonly string[]).includes(value);
 }

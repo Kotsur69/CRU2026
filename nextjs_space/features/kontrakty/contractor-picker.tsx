@@ -3,11 +3,14 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CONTROL_CLASS, FieldError } from "@/components/ui/form";
+import { NO_NIP_WARNING, nipCollisionQuestion, normaliseVatId } from "@/lib/contractors";
 
 /**
  * Pole „Kontrahent" — autocomplete po nazwie i NIP-ie, plus „dodaj" dopisujące firmę
  * do słownika bez wychodzenia z formularza (tak jak w legacy). Do formularza trafia
- * wyłącznie identyfikator; nazwa jest tylko tym, co widzi człowiek.
+ * wyłącznie identyfikator; nazwa jest tylko tym, co widzi człowiek. Podpowiedzi pokazują
+ * NIP tak jak podgląd legacy („Nazwa NIP: …", audyt §1.4), a dokładne trafienie w NIP
+ * serwer stawia na początku listy (docs/features/20).
  */
 
 export interface ContractorOption {
@@ -84,7 +87,7 @@ export function ContractorPicker({ name, label, initial, allowCreate }: Contract
           <span className="rounded-md border bg-muted/40 px-2 py-1 text-sm">
             {selected.name}
             {selected.vatId && (
-              <span className="ml-1 text-muted-foreground">NIP {selected.vatId}</span>
+              <span className="ml-1 text-muted-foreground">NIP: {selected.vatId}</span>
             )}
           </span>
           <Button variant="ghost" onClick={() => setSelected(null)}>
@@ -116,7 +119,7 @@ export function ContractorPicker({ name, label, initial, allowCreate }: Contract
                     >
                       {item.name}
                       {item.vatId && (
-                        <span className="ml-1 text-muted-foreground">NIP {item.vatId}</span>
+                        <span className="ml-1 text-muted-foreground">NIP: {item.vatId}</span>
                       )}
                     </button>
                   </li>
@@ -142,6 +145,11 @@ export function ContractorPicker({ name, label, initial, allowCreate }: Contract
   );
 }
 
+/**
+ * Mini-formularz „dodaj". NIP zajęty przez firmę ze słownika to odpowiedź 409 z tą firmą:
+ * pytamy „Użyć go?" i wybieramy ją dopiero po potwierdzeniu — legacy podmieniał ją po
+ * cichu, więc literówka w NIP-ie podpinała umowę pod obcą spółkę (docs/features/20).
+ */
 function CreateContractor({
   onCreated,
   onError,
@@ -152,7 +160,9 @@ function CreateContractor({
   const [shortName, setShortName] = useState("");
   const [vatId, setVatId] = useState("");
   const [saving, setSaving] = useState(false);
+  const [conflict, setConflict] = useState<ContractorOption | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const warningId = useId();
 
   useEffect(() => {
     nameRef.current?.focus();
@@ -160,6 +170,7 @@ function CreateContractor({
 
   const submit = async () => {
     setSaving(true);
+    setConflict(null);
     onError(null);
     try {
       const res = await fetch("/api/contractors", {
@@ -167,7 +178,15 @@ function CreateContractor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shortName, vatId }),
       });
-      const data = (await res.json()) as { item?: ContractorOption; error?: string };
+      const data = (await res.json()) as {
+        item?: ContractorOption;
+        conflict?: ContractorOption;
+        error?: string;
+      };
+      if (res.status === 409 && data.conflict) {
+        setConflict(data.conflict);
+        return;
+      }
       if (!res.ok || !data.item) throw new Error(data.error ?? "Nie udało się dodać kontrahenta.");
       onCreated(data.item);
     } catch (err) {
@@ -193,16 +212,39 @@ function CreateContractor({
         <input
           type="text"
           value={vatId}
-          onChange={(e) => setVatId(e.target.value)}
+          onChange={(e) => {
+            setVatId(e.target.value);
+            setConflict(null);
+          }}
           placeholder="NIP"
           inputMode="numeric"
           aria-label="NIP kontrahenta"
+          aria-describedby={warningId}
           className={`${CONTROL_CLASS} w-40`}
         />
         <Button variant="primary" onClick={submit} disabled={saving || shortName.trim() === ""}>
           {saving ? "Dodaję…" : "Zapisz kontrahenta"}
         </Button>
       </div>
+      {/* Brak NIP-u nie blokuje zapisu — firma zagraniczna go nie ma — ale ostrzega. */}
+      <p id={warningId} aria-live="polite" className="mt-1 text-xs font-medium text-amber-800">
+        {normaliseVatId(vatId) === null ? NO_NIP_WARNING : ""}
+      </p>
+      {conflict && (
+        <div
+          role="alert"
+          className="mt-2 rounded-md border border-amber-600/30 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          <p className="font-medium">{nipCollisionQuestion(conflict.name)}</p>
+          {conflict.vatId && <p className="mt-0.5 text-xs">NIP w słowniku: {conflict.vatId}</p>}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => onCreated(conflict)}>
+              Tak — użyj go
+            </Button>
+            <Button onClick={() => setConflict(null)}>Nie — popraw NIP</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
