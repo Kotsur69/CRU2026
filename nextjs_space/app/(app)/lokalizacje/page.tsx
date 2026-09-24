@@ -1,96 +1,111 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
-import { userLabel } from "@/lib/format";
+import { requireAdmin } from "@/lib/authz";
+import { yesNo } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { ClickableRow } from "@/components/ui/clickable-row";
+import { Cell, DataTable, type DataColumn } from "@/components/ui/data-table";
+import { FilterBar, type FilterField } from "@/components/ui/filter-bar";
+import { loadLocationUsage } from "@/features/lokalizacje/queries";
+import {
+  formatCount,
+  isUnused,
+  matchesName,
+  sortLocations,
+  sortParam,
+} from "@/features/lokalizacje/usage";
 
 export const dynamic = "force-dynamic";
 
-// Legacy „Lokalizacja dostępy" łączy dwie rzeczy: słownik lokalizacji (`contract_location`)
-// i przypisanie użytkowników do lokalizacji (`users_locations`), które zawęża widoczność.
-// Umowa wiąże się z lokalizacją dwiema drogami — kolumną `location_id` ORAZ tabelą
-// `contract_has_location` — więc obie liczymy osobno, żeby nic nie znikło.
-export default async function LokalizacjePage() {
-  const locations = await prisma.location.findMany({
-    include: {
-      userLinks: {
-        include: {
-          user: { select: { id: true, firstName: true, lastName: true, login: true } },
-        },
-        orderBy: { userId: "asc" },
-      },
-      _count: { select: { primaryForContracts: true, contractLinks: true } },
-    },
-    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-  });
+type SP = Record<string, string | undefined>;
 
-  const assignedUsers = locations.reduce((sum, l) => sum + l.userLinks.length, 0);
+// Legacy „Lokalizacja dostępy" łączy dwie rzeczy: słownik lokalizacji (`contract_location`)
+// i przypisania użytkowników (`users_locations`), które zawężają widoczność. Rekord wiąże
+// się z lokalizacją dwiema drogami — kolumną `location_id` ORAZ tabelą
+// `contract_has_location` — więc obie liczymy osobno (docs/features/12, 22).
+// To mapa dostępów, więc tylko dla administratora; 35 pozycji, więc bez paginacji.
+
+const COLUMNS: DataColumn[] = [
+  { id: "name", label: "Nazwa" },
+  { id: "primary", label: "Rekordy (główna)", align: "right" },
+  { id: "linked", label: "Rekordy (dodatkowe)", align: "right" },
+  { id: "grants", label: "Użytkownicy z dostępem", align: "right" },
+  { id: "active", label: "Aktywna" },
+];
+
+const FIELDS: FilterField[] = [
+  { name: "name", label: "Nazwa" },
+  {
+    name: "sort",
+    label: "Kolejność",
+    blankLabel: "Najwięcej rekordów",
+    options: [{ id: "name", name: "Nazwa (A–Ż)" }],
+  },
+];
+
+export default async function LokalizacjePage({ searchParams }: { searchParams: SP }) {
+  await requireAdmin();
+
+  const all = await loadLocationUsage();
+  const rows = sortLocations(
+    all.filter((l) => matchesName(l.name, searchParams.name)),
+    sortParam(searchParams.sort),
+  );
+  const grants = all.reduce((sum, l) => sum + l.grants, 0);
 
   return (
     <div>
-      <div className="mb-4 flex items-end justify-between">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <h1 className="font-heading text-2xl font-semibold">Lokalizacje i dostępy</h1>
         <span className="text-sm text-muted-foreground">
-          Lokalizacji: <strong className="text-foreground">{locations.length}</strong> · przypisań
-          użytkowników: <strong className="text-foreground">{assignedUsers}</strong>
+          Lokalizacji: <strong className="text-foreground">{rows.length}</strong>
+          {rows.length !== all.length && ` z ${all.length}`} · przypisań użytkowników:{" "}
+          <strong className="text-foreground">{formatCount(grants)}</strong>
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border shadow-sm">
-        <table className="w-full text-xs">
-          <thead className="bg-muted/60 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-2 py-1.5 font-semibold">Lokalizacja</th>
-              <th className="px-2 py-1.5 font-semibold">Opis</th>
-              <th className="px-2 py-1.5 font-semibold">Stan</th>
-              <th className="px-2 py-1.5 text-right font-semibold">Umowy (główna)</th>
-              <th className="px-2 py-1.5 text-right font-semibold">Umowy (powiązane)</th>
-              <th className="px-2 py-1.5 font-semibold">Użytkownicy z dostępem</th>
-            </tr>
-          </thead>
-          <tbody>
-            {locations.map((l) => (
-              <tr key={l.id} className="border-t">
-                <td className="whitespace-normal break-words px-2 py-1.5 align-top font-medium">
+      <FilterBar action="/lokalizacje" fields={FIELDS} values={searchParams} />
+
+      <DataTable
+        columns={COLUMNS}
+        isEmpty={rows.length === 0}
+        emptyTitle="Brak lokalizacji spełniających kryteria."
+      >
+        {rows.map((l) => (
+          <ClickableRow key={l.id} href={`/lokalizacje/${l.id}`}>
+            <Cell>
+              <span className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`/lokalizacje/${l.id}`}
+                  className="font-medium text-primary hover:underline"
+                >
                   {l.name}
-                </td>
-                <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                  {l.description ?? "—"}
-                </td>
-                <td className="px-2 py-1.5 align-top">
-                  <Badge tone={l.active ? "success" : "neutral"}>
-                    {l.active ? "Aktywna" : "Wyłączona"}
-                  </Badge>
-                </td>
-                <td className="px-2 py-1.5 text-right align-top tabular-nums">
-                  <Link href={`/umowy?location=${l.id}`} className="text-primary hover:underline">
-                    {l._count.primaryForContracts}
-                  </Link>
-                </td>
-                <td className="px-2 py-1.5 text-right align-top tabular-nums">
-                  {l._count.contractLinks}
-                </td>
-                <td className="whitespace-normal break-words px-2 py-1.5 align-top">
-                  {l.userLinks.length === 0 ? (
-                    <span className="text-muted-foreground">—</span>
-                  ) : (
-                    <span className="flex flex-wrap gap-x-2 gap-y-1">
-                      {l.userLinks.map((u) => (
-                        <Link
-                          key={u.userId}
-                          href={`/dostepy/${u.userId}`}
-                          className="text-primary hover:underline"
-                        >
-                          {userLabel(u.user)}
-                        </Link>
-                      ))}
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                </Link>
+                {isUnused(l) && <Badge tone="neutral">nieużywana</Badge>}
+              </span>
+            </Cell>
+            <Cell align="right" className="tabular-nums">
+              {formatCount(l.primary)}
+            </Cell>
+            <Cell align="right" className="tabular-nums">
+              {formatCount(l.linked)}
+            </Cell>
+            <Cell align="right" className="tabular-nums">
+              {formatCount(l.grants)}
+            </Cell>
+            <Cell>
+              <Badge tone={l.active ? "success" : "neutral"}>{yesNo(l.active)}</Badge>
+            </Cell>
+          </ClickableRow>
+        ))}
+      </DataTable>
+
+      <p className="mt-3 max-w-4xl text-xs text-muted-foreground">
+        „Rekordy (główna)" — rekordy Umów, Projektów i Działu ryzyka (bez usuniętych), których
+        pole „Lokalizacja" wskazuje tę pozycję. „Rekordy (dodatkowe)" — wiersze tabeli powiązań{" "}
+        <code>contract_has_location</code>; obie drogi rzadko się pokrywają. „Użytkownicy z
+        dostępem" — przypisania <code>users_locations</code>; zakresy z metamodelu dostępów
+        pokazuje strona lokalizacji.
+      </p>
     </div>
   );
 }

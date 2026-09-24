@@ -2,7 +2,7 @@
 id: 22
 title: Lokalizacje (Lokalizacja dostępy)
 group: D-supporting
-status: todo
+status: done
 depends-on: [03]
 legacy-tables: [contract_location, users_locations, contract_has_location]
 prisma-models: [Location, UserLocation, Contract, ContractLocationLink]
@@ -263,3 +263,44 @@ Manual checks:
    Łódź has one record, Łazy and Olkusz four each. If a site has closed, its
    dictionary entry should be deactivated so it leaves the form's dropdown while
    staying on its historical records.
+
+## Implementation notes (2026-09-24)
+
+- **Gate.** `requireAdmin()` in `lib/authz.ts`: a 404 for anyone but an administrator,
+  on both routes and in all three actions. The nav entry stays visible to everyone —
+  a per-actor nav is spec 03's.
+- **List.** Five columns, no pagination, `FilterBar` with "Nazwa" and "Kolejność"
+  (most records first by default, "Nazwa (A–Ż)" with `Intl.Collator("pl")`). The
+  dictionary plus the three `groupBy` queries: four statements whatever the row count,
+  checked with Prisma query events. The name filter runs in memory over the 35 rows.
+  `FilterBar.defaultPageSize` is now optional; without it there is no "Na stronie".
+  "nieużywana" means neither primary nor linked. `description` is no longer shown.
+- **Counts follow the spec's queries.** Primary excludes soft-deleted records;
+  "Rekordy (dodatkowe)" counts every `ContractLocationLink` row, links of deleted
+  records included. The legend under the table says so.
+- **Detail.** Dane (with the "brak danych" note and its live count), Wykorzystanie
+  (primary, linked, both at once, and per-register counts linking to
+  `/umowy|projekty|ryzyko?location=ID`, which use the same primary-or-linked
+  condition), the two access lists, and "Zmień nazwę / aktywność". Zakresy are
+  read-only and point to Q63.
+- **Actions** (`features/lokalizacje/actions.ts`). `grantLocation` is idempotent,
+  `revokeLocation` asks for confirmation, and `updateLocation` trims the name, caps it
+  at 45 characters (legacy `varchar(45)`) and rejects a case-insensitive duplicate.
+  `description` follows a rename only where it duplicated the name. No audit trail yet:
+  spec 23's `AccessAudit` should also log the grant and the revoke.
+- **Decision: "(brak danych)" cannot be renamed or deactivated.** The new-record form
+  finds it by name among active locations and makes it the default, so either change
+  would silently alter every new record. The page explains this instead of showing
+  the form.
+- **Decision: the contract form keeps an inactive location.** `loadFormDictionaries`
+  keeps the record's own `primaryLocationId`, as it already did for type, status,
+  company and domain. Without it, deactivating a location (Q65) makes the edit form
+  preselect "(brak danych)" and the next save writes it. Nothing else about how
+  locations are edited or stored changed (spec 12 is blocked on Q54).
+- **Open questions.** Q64 followed: no migration to null. Q65 left to humans: nothing
+  was deactivated. Q63 not decided: both lists are shown separately.
+- **Not verified on real data.** The 35-row figures and verification SQL 1–5 were run
+  against the synthetic fixture (six locations), where the page matches the SQL. The
+  "changes what that user sees" check waits on spec 03.
+- **Tests.** `features/lokalizacje/usage.test.ts`: merging, the name filter, Polish
+  order and the declined record counts ("8 161 rekordów").

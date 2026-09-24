@@ -46,6 +46,7 @@ export interface CurrentDictionaryValues {
   statusId?: number | null;
   companyId?: number | null;
   domainId?: number | null;
+  primaryLocationId?: number | null;
 }
 
 export interface FormDictionaries {
@@ -127,7 +128,12 @@ export async function loadFormDictionaries(
       orderBy: { shortName: "asc" },
     }),
     prisma.businessline.findMany({ where: { active: true }, orderBy: byName }),
-    prisma.location.findMany({ where: { active: true }, orderBy: byName }),
+    // Lokalizację wyłącza się w module Lokalizacje (docs/features/22). Bez tej pozycji
+    // na liście select pokazałby pierwszą opcję, „(brak danych)", i zapisał ją rekordowi.
+    prisma.location.findMany({
+      where: { OR: [{ active: true }, ...keep(current, "primaryLocationId")] },
+      orderBy: byName,
+    }),
     prisma.domain.findMany({
       // Rodzaje ryzyka tylko w Dziale ryzyka — patrz komentarz na górze pliku.
       where: {

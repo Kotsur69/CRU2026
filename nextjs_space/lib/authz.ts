@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth";
+import { notFound } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -36,6 +37,17 @@ export async function currentActor(): Promise<Actor | null> {
 export async function requireActor(): Promise<Actor> {
   const actor = await currentActor();
   if (!actor) throw new Error("Brak sesji — zaloguj się ponownie.");
+  return actor;
+}
+
+/**
+ * The administration screens — Dostępy, Grupy, Lokalizacje — and their actions are for
+ * administrators only (docs/features/03). Anyone else gets a 404 rather than "access
+ * denied": the map of who sees what is not disclosed, not even that the screen exists.
+ */
+export async function requireAdmin(): Promise<Actor> {
+  const actor = await currentActor();
+  if (!actor?.isAdmin) notFound();
   return actor;
 }
 
