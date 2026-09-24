@@ -41,6 +41,7 @@ import {
   toRecord,
   type SqlValue,
 } from "./dump-parser";
+import { addressIssue } from "../../lib/mailing/address";
 
 type Row = Record<string, SqlValue>;
 type TableMap = Map<string, Row[]>;
@@ -598,6 +599,17 @@ async function main(): Promise<void> {
     (data) => prisma.mailingContact.createMany({ data, skipDuplicates: true }),
     dryRun,
   );
+  // `mailing_lists.email` is char(50) and MySQL cut longer values silently: an address
+  // that fills the column, or no longer ends in a domain, is reported (docs/features/25).
+  const suspectAddresses = rowsOf(tables, "mailing_lists").filter(
+    (r) => addressIssue(asText(r.email)) === "suspect",
+  );
+  if (suspectAddresses.length > 0) {
+    process.stdout.write(
+      `  ! MailingContact: ${suspectAddresses.length} address(es) may be truncated, ids ` +
+        `${suspectAddresses.map((r) => asInt(r.id)).join(", ")}\n`,
+    );
+  }
 
   await load(
     "UserGroup",

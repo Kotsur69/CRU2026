@@ -109,6 +109,7 @@ model User {
   remarks               Remark[]
   historyEntries        ContractHistory[]
   shoutboxEntries       ShoutboxRecipient[]
+  mailingContact        MailingContact?
 
   @@index([active])
 }
@@ -698,6 +699,8 @@ model MailingGroup {
   contacts MailingContact[]
 }
 
+/// Legacy `mailing_lists` — 275 real staff names with 269 `@arcelormittal.com`
+/// addresses, the only place in the dump where a name meets an address (docs/features/25).
 model MailingContact {
   id             Int           @id
   firstName      String?
@@ -705,6 +708,10 @@ model MailingContact {
   email          String?
   mailingGroupId Int?
   mailingGroup   MailingGroup? @relation(fields: [mailingGroupId], references: [id])
+  /// The approved match to a directory account: one contact per account. Written only
+  /// after an administrator reviews a proposal — the matching script never writes it.
+  userId         Int?          @unique
+  user           User?         @relation(fields: [userId], references: [id])
 
   @@index([mailingGroupId])
 }

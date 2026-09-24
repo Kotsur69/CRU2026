@@ -2,7 +2,7 @@
 id: 25
 title: Mailing
 group: D-supporting
-status: todo
+status: in-progress
 depends-on: [29]
 legacy-tables: [mailing_lists, mailing_groups, message]
 prisma-models: [MailingContact, MailingGroup, MessageTemplate]
@@ -262,3 +262,54 @@ Manual checks:
    remaining 275 are current staff — useful to know before matching.
 4. **Q1 carries over**, narrowed: the export needs to supply **logins**; names and
    addresses may already be here.
+
+## Implementation notes (2026-09-24)
+
+Built except the step that applies a match, which needs the Q67 sign-off. Verified on
+the synthetic fixture plus a few test contacts; the real counts (275 / 269 / 6) still
+need a run against `cru2026`.
+
+- **Admin only.** Both routes call `requireAdmin()` from `lib/authz.ts` (added by spec
+  22), so anyone who is not an admin gets a 404. The menu item stays for everyone, as in
+  legacy, where every account saw all ten items and got "Access deny!".
+- **`/mailing`** uses the spec 05 recipe with the columns Imię · Nazwisko · E-mail ·
+  Grupa · Dopasowany użytkownik. The filters are the name, where every word must match
+  the first or the last name; the e-mail; the group; **"bez adresu"**; and
+  **"niedopasowani"**. The default page size is 50. Three tiles show Kontakty, Bez adresu
+  and "Dopasowane do kont użytkowników: 0 z N", and every row reads "brak dopasowania".
+  That is the plain statement the spec asks for.
+- **`/mailing/[id]`** is new. It shows the name, surname, e-mail, group and legacy id, plus
+  the matched account. It also shows the logins the convention gives, with the parts of a
+  double surname listed separately, and a **read-only proposal**. The proposal comes from
+  the same code as the script.
+- **Schema.** `MailingContact.userId Int? @unique` is a relation to `User`, set to null
+  if the user is deleted. The migration is `20260924132500_mailing_contact_user`, and it
+  leaves the column empty on every row. `@unique` goes beyond the spec: one contact per
+  account, because an account takes one name and one address.
+- **Matching tool.** `lib/mailing/match.ts` is pure and has 14 Vitest cases, including
+  the audit's `mborowiecka` and `mgolosz`. `lib/mailing/sources.ts` supplies the inputs:
+  real logins only (`legacy-<id>` is skipped) and only accounts and contacts that have
+  no match yet. `scripts/legacy/match-mailing-to-users.ts` prints the three groups;
+  `--logins a,b` checks logins that are not in the database. Confidence is **wysoka**
+  when the name and the address both give the login, **średnia** when only one does, and
+  **niska** when only one part of a double surname matches. A login counts as
+  unambiguous only when it has a single candidate that no other login wants and whose
+  confidence is not niska. Every other login is ambiguous, with a reason.
+- **Writes nothing.** The script reads inside a `READ ONLY` transaction, and PostgreSQL
+  refused a test UPDATE made there. Checksums of `User` and `MailingContact` were the
+  same before and after a run.
+- **Truncation.** `lib/mailing/address.ts` treats an address as suspect when it is
+  exactly 50 characters long or does not end in a TLD. The list, the contact page and the
+  script show "adres do sprawdzenia". `yarn db:import`, including `--dry-run`, prints the
+  ids of such addresses. A missing address shows as "brak adresu".
+- **Q67:** built as a proposal tool only. Nothing writes `MailingContact.userId` or any
+  `User` row. **Q68:** a contact list only. There is no send button, and the old page's
+  `mailto:` links are gone. **Q69:** recorded; nothing depends on it.
+- **Left out:** the admin action to set or clear a match, and with it copying the name
+  and address onto the account and writing the `AccessAudit` row. The spec requires
+  sign-off before any match is applied (Q67), and `AccessAudit` (spec 23) does not exist
+  yet. The column, the "niedopasowani" filter and the display of a matched account are
+  ready for it; a temporary test link rendered correctly.
+- **Removed:** the "Tylko bez grupy" checkbox, which the spec's filters replace and which
+  returns everyone on the real data. Also removed: the banner that said every contact
+  without a group had pointed at a missing group. That was only true of 54 contacts.
