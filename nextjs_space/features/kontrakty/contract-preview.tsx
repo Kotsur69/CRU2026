@@ -15,6 +15,7 @@ import {
   type RegisterModule,
 } from "@/lib/contracts/modules";
 import { partitionRelations } from "@/lib/contracts/relations";
+import { buttonClass } from "@/components/ui/button";
 import { ContractActions } from "./contract-actions";
 
 /**
@@ -34,6 +35,9 @@ const MODULE_LABEL: Record<RegisterModule, string> = {
 };
 
 const PERSON = { id: true, firstName: true, lastName: true, login: true } as const;
+
+/** Tyle aneksów widać od razu; długi ogon (rekord: 58) rozwija „pokaż wszystkie". */
+const ANNEXES_SHOWN = 10;
 
 type Person = { id: number; firstName: string | null; lastName: string | null; login: string | null };
 
@@ -77,9 +81,11 @@ export interface ContractPreviewProps {
   id: number;
   /** Rejestr trasy — rekord z innego modułu nie renderuje się pod cudzym adresem. */
   module: RegisterModule;
+  /** `?aneksy=wszystkie` — pełna lista aneksów zamiast pierwszych dziesięciu. */
+  showAllAnnexes?: boolean;
 }
 
-export async function ContractPreview({ id, module }: ContractPreviewProps) {
+export async function ContractPreview({ id, module, showAllAnnexes = false }: ContractPreviewProps) {
   const c = await prisma.contract.findUnique({
     where: { id },
     include: {
@@ -98,12 +104,29 @@ export async function ContractPreview({ id, module }: ContractPreviewProps) {
       contractor: true,
       debtor: true,
       acceptanceForm: true,
-      parent: { select: { id: true, identifier: true, module: true } },
+      parent: {
+        select: {
+          id: true,
+          identifier: true,
+          module: true,
+          // Rodzeństwo aneksu — „który aneks jest aktualny" to pytanie przy 58 zmianach.
+          annexes: { where: { isDeleted: false }, select: { id: true, identifier: true, module: true } },
+        },
+      },
       // `parentId` niesie i aneksy, i projekty, z których umowa powstała — jedno wczytanie,
       // podział w pamięci po module dziecka (docs/features/07, 09).
       annexes: {
         where: { isDeleted: false },
-        select: { id: true, identifier: true, module: true },
+        select: {
+          id: true,
+          identifier: true,
+          module: true,
+          dateBegin: true,
+          salary: true,
+          currency: { select: { code: true } },
+          documentType: { select: { name: true } },
+          status: { select: { name: true } },
+        },
       },
       attachments: { orderBy: [{ isFinal: "desc" }, { id: "asc" }] },
       userAccess: { orderBy: { readOnly: "asc" }, include: { user: { select: PERSON } } },
@@ -155,8 +178,15 @@ export async function ContractPreview({ id, module }: ContractPreviewProps) {
   const relations = partitionRelations({
     module: c.module,
     parent: c.parent,
+    // Kolejność po numerze aneksu, liczbowo — `/A10` po `/A2` (docs/features/11).
     children: [...c.annexes].sort((a, b) => compareIdentifiers(a.identifier, b.identifier)),
   });
+  const siblings = relations.annexOf
+    ? (c.parent?.annexes ?? [])
+        .filter((a) => a.id !== c.id && a.module === c.module)
+        .sort((a, b) => compareIdentifiers(a.identifier, b.identifier))
+    : [];
+  const shownAnnexes = showAllAnnexes ? relations.annexes : relations.annexes.slice(0, ANNEXES_SHOWN);
   const counterparty = c.contractor
     ? `${contractorLabel(c.contractor)}${c.contractor.vatId ? ` NIP: ${c.contractor.vatId}` : ""}`
     : null;
@@ -202,8 +232,9 @@ export async function ContractPreview({ id, module }: ContractPreviewProps) {
         basePath={backHref}
         canEdit={canEdit}
         frozen={frozen}
-        // Aneksy są cechą umów i projektów; rekordy Działu ryzyka ich nie mają.
-        allowAnnexes={!isRisk}
+        // Aneksy są cechą umów i projektów; rekordy Działu ryzyka ich nie mają, a aneks
+        // nie dostaje własnych aneksów (docs/features/11).
+        allowAnnexes={!isRisk && !relations.annexOf}
       />
 
       {/* Kluczowe fakty */}
@@ -363,9 +394,19 @@ export async function ContractPreview({ id, module }: ContractPreviewProps) {
                   <Field label="Aneks do umowy">
                     {relations.annexOf && <RecordLink record={relations.annexOf} />}
                   </Field>
-                  <Field label="Aneksy do umowy">
-                    {relations.annexes.length > 0 ? <RecordLinks records={relations.annexes} /> : null}
-                  </Field>
+                  {relations.annexOf ? (
+                    <Field label="Pozostałe aneksy umowy">
+                      {siblings.length > 0 ? <RecordLinks records={siblings} /> : null}
+                    </Field>
+                  ) : (
+                    <Field label="Aneksy do umowy">
+                      {relations.annexes.length > 0 ? (
+                        <a href="#aneksy" className="text-primary hover:underline">
+                          {relations.annexes.length} — lista poniżej
+                        </a>
+                      ) : null}
+                    </Field>
+                  )}
                   {/* Etykieta po angielsku, jak w legacy (audyt §1.4, pole 5). */}
                   <Field label="Project">
                     {relations.projects.length > 0 ? <RecordLinks records={relations.projects} /> : null}
@@ -376,6 +417,67 @@ export async function ContractPreview({ id, module }: ContractPreviewProps) {
           </Section>
         )}
       </div>
+
+      {/* Aneksy do umowy — tabela, nie lista po przecinku: ogon sięga 58 aneksów. Sekcji
+          nie ma, gdy aneksów nie ma (docs/features/11). */}
+      {module === "CONTRACT" && relations.annexes.length > 0 && (
+        <section id="aneksy" className="rounded-lg border bg-card p-5 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Aneksy do umowy ({relations.annexes.length})
+            </h2>
+            {canEdit && (
+              <div className="flex flex-wrap gap-2">
+                <Link href={`${backHref}/${c.id}/aneks`} className={buttonClass("secondary")}>
+                  Dodaj aneks
+                </Link>
+                <Link href={`${backHref}/${c.id}/projekt-aneksu`} className={buttonClass("secondary")}>
+                  Stwórz projekt aneksu
+                </Link>
+              </div>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-semibold">Identyfikator</th>
+                  <th className="py-1 pr-3 font-semibold">Typ dokumentu</th>
+                  <th className="py-1 pr-3 font-semibold">Status</th>
+                  <th className="py-1 pr-3 font-semibold">Data zawarcia</th>
+                  <th className="py-1 text-right font-semibold">Wynagrodzenie</th>
+                </tr>
+              </thead>
+              <tbody>
+                {shownAnnexes.map((a) => (
+                  <tr key={a.id} className="border-t border-border/60">
+                    <td className="py-1.5 pr-3">
+                      <RecordLink record={a} />
+                    </td>
+                    <td className="py-1.5 pr-3">{a.documentType?.name ?? "—"}</td>
+                    <td className="py-1.5 pr-3">
+                      {a.status ? (
+                        <Badge tone={moduleStatusTone(a.module, a.status.name)}>{a.status.name}</Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3 tabular-nums">{formatDate(a.dateBegin)}</td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {formatMoney(a.salary?.toString(), a.currency?.code?.toUpperCase())}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {relations.annexes.length > shownAnnexes.length && (
+            <Link href={`${backHref}/${c.id}?aneksy=wszystkie#aneksy`} className="mt-2 inline-block text-sm text-primary hover:underline">
+              pokaż wszystkie ({relations.annexes.length})
+            </Link>
+          )}
+        </section>
+      )}
 
       {/* Uwagi — zawsze widoczne: legacy wypisuje etykietę także pustą. */}
       <Section title="Uwagi">

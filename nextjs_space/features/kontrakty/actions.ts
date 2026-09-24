@@ -23,6 +23,7 @@ import {
   contractToFormValues,
   counterpartyLabels,
   fromDateInput,
+  isAnnex,
   loadContractForForm,
 } from "@/lib/contracts/record";
 import { nextAnnexIdentifier, nextRecordIdentifier } from "@/lib/contracts/identifier";
@@ -214,6 +215,21 @@ export async function saveContract(
     return { errors: { _form: "Rekord nie istnieje lub został usunięty." } };
   }
 
+  // Aneksy nie zagnieżdżają się (docs/features/11) — formularz już tego nie proponuje,
+  // ale żądanie może przyjść z pominięciem formularza.
+  if (mode !== "edit" && isAnnex(base)) {
+    return {
+      errors: {
+        _form: "Nie można dodać aneksu do aneksu. Dodaj kolejny aneks do umowy nadrzędnej.",
+      },
+      values: raw,
+    };
+  }
+  // Nowy aneks nie obowiązuje z automatu, więc status jest wyborem, nie wartością domyślną.
+  if (mode === "annex" && values.statusId === null) {
+    return { errors: { statusId: "Wybierz status aneksu." }, values: raw };
+  }
+
   const module: ContractModule =
     mode === "annex-project" ? "PROJECT" : mode === "annex" ? "CONTRACT" : base.module;
 
@@ -285,16 +301,16 @@ export async function saveContract(
     // Numer proponuje serwer, ale użytkownik może go nadpisać — tak działa legacy
     // (stąd 111 powtórzonych identyfikatorów w dumpie). Powiązanie aneksu z umową
     // trzyma `parentId` nadawany niżej, a nie treść numeru: przepisanie numeru nie
-    // może zerwać relacji, a wpisanie cudzego numeru jej nie podmienia.
+    // może zerwać relacji, a wpisanie cudzego numeru jej nie podmienia. Projekt aneksu
+    // dostaje ten sam kształt `<rodzic>/Ann` co aneks (docs/features/11).
     const identifier =
       values.identifier ??
-      (mode === "annex"
-        ? await nextAnnexIdentifier(base.id)
-        : await nextRecordIdentifier({
-            companyId: values.companyId,
-            businesslineId: values.businesslineId,
-            module: "PROJECT",
-          }));
+      (await nextAnnexIdentifier(base.id)) ??
+      (await nextRecordIdentifier({
+        companyId: values.companyId,
+        businesslineId: values.businesslineId,
+        module: registerOf(module),
+      }));
 
     const created = await prisma.$transaction(async (tx) => {
       const row = await tx.contract.create({

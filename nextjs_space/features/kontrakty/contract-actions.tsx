@@ -54,10 +54,20 @@ export function ContractActions({
           </Link>
           {allowAnnexes && (
             <>
-              <Link href={href("aneks")} className={buttonClass("secondary")}>
+              {/* Różnica to moduł tworzonego rekordu (docs/features/11): aneks od razu
+                  w Umowach albo projekt, który po obiegu opinii stanie się aneksem. */}
+              <Link
+                href={href("aneks")}
+                title="Nowy aneks w rejestrze Umów, z kolejnym numerem /Ann tej umowy"
+                className={buttonClass("secondary")}
+              >
                 Dodaj aneks
               </Link>
-              <Link href={href("projekt-aneksu")} className={buttonClass("secondary")}>
+              <Link
+                href={href("projekt-aneksu")}
+                title="Nowy projekt w module Projekty — po obiegu opinii stanie się aneksem"
+                className={buttonClass("secondary")}
+              >
                 Stwórz projekt aneksu
               </Link>
             </>

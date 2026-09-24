@@ -45,7 +45,7 @@ Everything else depends on these. Build in order.
 | 08 | [Dział ryzyka register](08-ryzyko-register_done.md) | done | 03, 05 |
 | 09 | [Contract detail](09-contract-detail_done.md) | done | 05 |
 | 10 | [Contract form](10-contract-form.md) | todo | 01, 02 |
-| 11 | [Annexes](11-annexes.md) | todo | 02, 10 |
+| 11 | [Annexes](11-annexes_done.md) | done | 02, 10 |
 | 12 | [Multi-location](12-multi-location.md) | todo | 03, 10 |
 
 ## C. Missing subsystems

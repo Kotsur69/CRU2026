@@ -32,28 +32,28 @@ export function resultingContract<T extends LinkedRecord>(project: {
   return project.parent?.module === "CONTRACT" ? project.parent : null;
 }
 
-export interface Relations<T extends LinkedRecord> {
+export interface Relations<P extends LinkedRecord, C extends LinkedRecord> {
   /** Umowa, której ten rekord jest aneksem („Aneks do umowy"). */
-  annexOf: T | null;
+  annexOf: P | null;
   /** Umowa, którą projekt się stał. */
-  resultingContract: T | null;
+  resultingContract: P | null;
   /** Projekt nadrzędny projektu aneksu. */
-  parentProject: T | null;
+  parentProject: P | null;
   /** Aneksy — dzieci z tego samego modułu. */
-  annexes: T[];
+  annexes: C[];
   /** Projekty, z których umowa powstała („Project"). */
-  projects: T[];
+  projects: C[];
 }
 
 /**
  * Jedno wczytanie dzieci, podział w pamięci (docs/features/09): rekord ma co najwyżej
  * kilkadziesiąt dzieci, więc to taniej niż dwie przefiltrowane relacje.
  */
-export function partitionRelations<T extends LinkedRecord>(record: {
+export function partitionRelations<P extends LinkedRecord, C extends LinkedRecord>(record: {
   module: ContractModule;
-  parent: T | null;
-  children: T[];
-}): Relations<T> {
+  parent: P | null;
+  children: C[];
+}): Relations<P, C> {
   const parent = record.parent;
   const isProject = record.module === "PROJECT";
   return {

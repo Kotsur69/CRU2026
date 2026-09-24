@@ -139,14 +139,17 @@ export function emptyFormValues(defaults: Partial<ContractFormValues> = {}): Con
 }
 
 /**
- * Wypełnienie wstępne aneksu danymi umowy nadrzędnej.
+ * Wypełnienie wstępne aneksu danymi umowy nadrzędnej (docs/features/11).
  *
- * Co się dziedziczy, wynika z danych i ze zrzutów legacy: formularz aneksu otwiera się
- * wypełniony danymi rodzica — spółką, kontrahentem, rodzajem umowy, lokalizacją, formą
- * doręczenia, numerem umowy i datami — a zmienia się typ dokumentu (na „Aneks").
- * To tylko wypełnienie wstępne: w dumpie 3 149/3 278 aneksów ma kontrahenta rodzica,
- * ale już tylko 433 jego datę zawarcia, bo użytkownik nadpisuje ją własną.
- * Nie przenosimy identyfikatora ani statusu — aneks dostaje własny numer i własny cykl.
+ * Z rodzica przechodzi to, co aneks z nim dzieli: spółka, businessline, lokalizacja,
+ * kontrahent i dłużnik, rodzaj i charakter umowy, właściciele z prawem edycji — oraz
+ * forma doręczenia, numer umowy kontrahenta i waluta. Typ dokumentu to „Aneks", ale
+ * wolno go zmienić (127 aneksów to „Porozumienie").
+ *
+ * Puste zostaje to, co aneks zmienia: daty, kwota i przedmiot (Q51). W dumpie 3 149
+ * z 3 278 aneksów ma kontrahenta rodzica, ale tylko 433 jego datę zawarcia —
+ * wypełniona wartość zostałaby odpowiedzią, gdy nikt jej nie poprawi. Status też
+ * startuje pusty: nowy aneks nie obowiązuje z automatu.
  */
 export function annexDefaultsFrom(
   parent: ContractForForm,
@@ -158,14 +161,27 @@ export function annexDefaultsFrom(
     identifier: options.identifier,
     documentTypeId: options.documentTypeId ?? base.documentTypeId,
     statusId: options.statusId,
-    // Data wysłania dotyczy konkretnej przesyłki rodzica, więc jako jedyna z dat
-    // startuje pusta.
+    description: null,
+    dateBegin: null,
+    dateEnd: null,
+    indefinite: false,
     sentOn: null,
+    salary: null,
+    specificSalaryTerms: null,
+    paymentTerm: null,
     // Opiniowanie aneksu zaczyna się od zera — opinie rodzica dotyczą innego dokumentu.
     reviewerIds: [],
     remarks: null,
     formSession: null,
   };
+}
+
+/** Rekord jest aneksem: umowa, której rodzicem jest umowa (docs/features/07, 11). */
+export function isAnnex(record: {
+  module: string;
+  parent: { module: string } | null;
+}): boolean {
+  return record.module === "CONTRACT" && record.parent?.module === "CONTRACT";
 }
 
 /** Etykiety kontrahenta i dłużnika do wpisów historii (patrz `withCounterparties`). */

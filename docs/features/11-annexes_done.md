@@ -2,7 +2,7 @@
 id: 11
 title: Aneksy
 group: B-registers
-status: todo
+status: done
 depends-on: [02, 10]
 legacy-tables: [contract]
 prisma-models: [Contract, DocumentType]
@@ -383,3 +383,33 @@ Manual checks:
    is also a plausible reading and would produce different numbers.
 4. **Q39 carries over** — `plan.md`'s annex figure is wrong and says so in a document
    this spec set does not replace.
+
+## Implementation notes (2026-09-24)
+
+- **Numbering:** `nextAnnexIdentifier` takes `max + 1` over every child of the parent,
+  soft-deleted included, parsed with `parseIdentifier` (spec 02), so the suffix-less
+  2012 annexes count as 0. Children of *any* module count, which means an `/A`
+  project-for-annex also consumes its number: two drafts never share an identifier.
+  If the real annex should reuse its draft's number, the identifier field stays
+  editable.
+- **"Stwórz projekt aneksu"** now numbers the PROJECT-module record `<parent>/A<nn>`,
+  matching the 28 in the data (it used to take a `P` number). Both buttons carry a
+  help text naming the difference.
+- **Pre-fill** (`annexDefaultsFrom`): company, businessline, location, counterparty,
+  debtor, domain, nature, owners and edit rights, delivery method, contract
+  reference and currency. Dates, amount, payment terms and subject start empty
+  (Q51). Status starts empty on an annex and is then **required** ("Wybierz status
+  aneksu."), so no new status-less records appear. The document type defaults to
+  "Aneks" and stays changeable. A project for an annex starts "Projekt - w toku".
+- **No nesting.** Both the form and the server action refuse an annex of an annex
+  with the spec's message and a link to the parent. The preview of an annex shows
+  no annex buttons.
+- **Preview:** an "Aneksy do umowy" table (Identyfikator, Typ dokumentu, Status,
+  Data zawarcia, Wynagrodzenie) in numeric annex order, first ten plus
+  "pokaż wszystkie (N)" (`?aneksy=wszystkie`), absent when empty, with both buttons
+  above it for editors. An annex shows "Aneks do umowy" as a header badge and its
+  siblings under "Pozostałe aneksy umowy".
+- Checked on the fixture: a parent with a deleted `/A04` and a max of `/A12` gave
+  `/A13`, then `/A14` for the project.
+- **Not done:** Q52 (propagating an annex's dates to its parent) — a question for the
+  legal department. Q39 (correcting `plan.md`) was not requested.

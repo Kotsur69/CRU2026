@@ -9,10 +9,12 @@ import {
   optionId,
   type Option,
 } from "@/lib/contracts/dictionaries";
+import Link from "next/link";
 import {
   annexDefaultsFrom,
   contractToFormValues,
   emptyFormValues,
+  isAnnex,
   loadContractForForm,
 } from "@/lib/contracts/record";
 import { nextAnnexIdentifier } from "@/lib/contracts/identifier";
@@ -28,7 +30,7 @@ import type { SaveMode } from "./actions";
  */
 
 const ANNEX_TYPE = "Aneks";
-const NEW_ANNEX_STATUS = "Obowiązująca";
+const NEW_CONTRACT_STATUS = "Obowiązująca";
 const NEW_PROJECT_STATUS = "Projekt - w toku";
 const NEW_RISK_STATUS = "Dział ryzyka - aktywny";
 /** Legacy `pri = 1` — waluta, na której otwiera się każdy nowy formularz. */
@@ -53,6 +55,25 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
   // Prawo edycji rekordu wyjściowego jest warunkiem i edycji, i tworzenia jego aneksu.
   if (!(await canEditContract(actor, id))) redirect(`${basePath}/${id}`);
 
+  // Aneksy nie zagnieżdżają się — przez czternaście lat danych ani razu (docs/features/11).
+  // Zmiana aneksu to kolejny aneks do umowy nadrzędnej.
+  if (mode !== "edit" && isAnnex(record) && record.parent) {
+    return (
+      <div className="max-w-2xl space-y-3">
+        <h1 className="font-heading text-2xl font-semibold">Nie można dodać aneksu do aneksu</h1>
+        <p role="alert" className="rounded-md border border-amber-600/30 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Nie można dodać aneksu do aneksu. Dodaj kolejny aneks do umowy nadrzędnej.
+        </p>
+        <Link
+          href={`${modulePath(record.parent.module)}/${record.parent.id}`}
+          className="text-sm text-primary hover:underline"
+        >
+          Przejdź do umowy {record.parent.identifier ?? `#${record.parent.id}`}
+        </Link>
+      </div>
+    );
+  }
+
   const kind: RegisterModule =
     mode === "edit"
       ? (record.status?.kind ?? registerOf(record.module))
@@ -65,11 +86,11 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
     // nie zniknęła z formularza i nie wyczyściła się przy pierwszym zapisie.
     loadFormDictionaries(kind, record),
     mode === "edit" ? null : prisma.documentType.findFirst({ where: { name: ANNEX_TYPE } }),
-    mode === "edit"
-      ? null
-      : prisma.contractStatus.findFirst({
-          where: { kind, name: mode === "annex-project" ? NEW_PROJECT_STATUS : NEW_ANNEX_STATUS },
-        }),
+    // Aneks startuje bez statusu — nowy aneks nie obowiązuje z automatu (docs/features/11).
+    // Projekt aneksu startuje „w toku", jak każdy nowy projekt.
+    mode === "annex-project"
+      ? prisma.contractStatus.findFirst({ where: { kind, name: NEW_PROJECT_STATUS } })
+      : null,
     mode === "edit"
       ? prisma.attachment.findMany({
           where: { contractId: id },
@@ -83,8 +104,9 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
       ? contractToFormValues(record)
       : annexDefaultsFrom(record, {
           // Numer aneksu pokazujemy z góry, żeby było widać, co powstanie; ostateczny
-          // nadaje serwer przy zapisie, bo w międzyczasie mógł dojść inny aneks.
-          identifier: mode === "annex" ? await nextAnnexIdentifier(record.id) : null,
+          // nadaje serwer przy zapisie, bo w międzyczasie mógł dojść inny aneks. Projekt
+          // aneksu też nosi sufiks /A — jak 28 takich projektów w danych.
+          identifier: await nextAnnexIdentifier(record.id),
           documentTypeId: annexType?.id ?? null,
           statusId: defaultStatus?.id ?? null,
         });
@@ -168,7 +190,7 @@ export async function ContractFormPage({ id, mode, basePath }: ContractFormPageP
 }
 
 const NEW_RECORD_STATUS: Record<RegisterModule, string> = {
-  CONTRACT: NEW_ANNEX_STATUS,
+  CONTRACT: NEW_CONTRACT_STATUS,
   PROJECT: NEW_PROJECT_STATUS,
   RISK: NEW_RISK_STATUS,
 };
