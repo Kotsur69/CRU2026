@@ -94,7 +94,8 @@ model User {
   createdAt     DateTime @default(now())
 
   groups                UserGroup[]
-  groupHistory          UserGroupHistory[]
+  groupHistory          UserGroupHistory[]  @relation("GroupHistoryMember")
+  groupChangesMade      UserGroupHistory[]  @relation("GroupHistoryChangedBy")
   locations             UserLocation[]
   accessScopes          UserAccessScope[]
   ownedGroups           Group[]             @relation("GroupOwner")
@@ -142,15 +143,32 @@ model UserGroup {
 }
 
 /// Legacy `users_groups_history` — append-only record of past memberships.
+///
+/// Legacy stored only `(user_id, group_id)`: the 391 imported rows say somebody was once
+/// in a group, never when, why or who changed it, and no date is ever inferred for them
+/// (docs/features/21). Rows written by this application carry `changedAt`, `changedById`
+/// and `action`; on imported rows all three stay null, which is how the UI tells them apart.
 model UserGroupHistory {
-  id      Int   @id @default(autoincrement())
-  userId  Int
-  user    User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  groupId Int
-  group   Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  id          Int                    @id @default(autoincrement())
+  userId      Int
+  user        User                   @relation("GroupHistoryMember", fields: [userId], references: [id], onDelete: Cascade)
+  groupId     Int
+  group       Group                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  /// No `@default(now())` on purpose: a default would stamp the import time on legacy rows.
+  changedAt   DateTime?
+  changedById Int?
+  changedBy   User?                  @relation("GroupHistoryChangedBy", fields: [changedById], references: [id])
+  action      GroupMembershipAction?
 
   @@index([userId])
   @@index([groupId])
+  @@index([changedById])
+}
+
+/// What a `UserGroupHistory` row written by this application records.
+enum GroupMembershipAction {
+  ADDED
+  REMOVED
 }
 
 /// Legacy `users_locations` — restricts a user to given locations.

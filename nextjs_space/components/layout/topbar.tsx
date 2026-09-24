@@ -5,7 +5,7 @@ import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LogOut } from "lucide-react";
-import { NAV_ITEMS } from "@/lib/nav";
+import { navItemsFor } from "@/lib/nav";
 import { NotificationBell } from "./notification-bell";
 import { cn } from "@/lib/utils";
 
@@ -80,7 +80,7 @@ export function Topbar() {
         aria-label="Nawigacja główna"
         className="flex items-center gap-1 overflow-x-auto border-t border-white/15 px-4 py-1.5"
       >
-        {NAV_ITEMS.map((item) => {
+        {navItemsFor(session?.user?.role === "admin").map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;
 
