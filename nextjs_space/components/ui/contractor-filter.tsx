@@ -104,7 +104,7 @@ export function ContractorFilter({
                 className="block w-full px-2 py-1.5 text-left hover:bg-muted"
               >
                 {item.name}
-                {item.vatId && <span className="ml-1 text-muted-foreground">NIP {item.vatId}</span>}
+                {item.vatId && <span className="ml-1 text-muted-foreground">NIP: {item.vatId}</span>}
               </button>
             </li>
           ))}

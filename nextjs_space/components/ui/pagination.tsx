@@ -10,22 +10,35 @@ export interface PaginationProps {
   page: number;
   pageSize: number;
   total: number;
+  /** Parametr numeru strony — ekran z dwiema listami potrzebuje dwóch. Domyślnie `page`. */
+  param?: string;
+  /** Kotwica sekcji, do której wraca widok po zmianie strony (np. `umowy`). */
+  anchor?: string;
 }
 
-export function Pagination({ basePath, searchParams, page, pageSize, total }: PaginationProps) {
+export function Pagination({
+  basePath,
+  searchParams,
+  page,
+  pageSize,
+  total,
+  param = "page",
+  anchor,
+}: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
+  const hash = anchor ? `#${anchor}` : "";
 
   const kept = Object.entries(searchParams).filter(
     (entry): entry is [string, string] =>
-      entry[0] !== "page" && typeof entry[1] === "string" && entry[1] !== "",
+      entry[0] !== param && typeof entry[1] === "string" && entry[1] !== "",
   );
 
   const hrefForPage = (target: number) => {
     const q = new URLSearchParams(kept);
-    q.set("page", String(target));
-    return `${basePath}?${q.toString()}`;
+    q.set(param, String(target));
+    return `${basePath}?${q.toString()}${hash}`;
   };
 
   return (
@@ -64,7 +77,7 @@ export function Pagination({ basePath, searchParams, page, pageSize, total }: Pa
               Następna →
             </Link>
           )}
-          <form method="get" action={basePath} className="flex items-center gap-1">
+          <form method="get" action={`${basePath}${hash}`} className="flex items-center gap-1">
             {kept.map(([key, value]) => (
               <input key={key} type="hidden" name={key} value={value} />
             ))}
@@ -72,7 +85,7 @@ export function Pagination({ basePath, searchParams, page, pageSize, total }: Pa
               <span>Idź do strony</span>
               <input
                 type="number"
-                name="page"
+                name={param}
                 min={1}
                 max={totalPages}
                 defaultValue={page}

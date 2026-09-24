@@ -2,7 +2,7 @@
 id: 20
 title: Kontrahenci
 group: D-supporting
-status: todo
+status: in-progress
 depends-on: [05]
 legacy-tables: [contractor, attachment]
 prisma-models: [Contractor, Contract, Attachment]
@@ -353,3 +353,92 @@ Manual checks:
    row is created, which makes it worth more than its "nice to have" billing.
 4. **Q42 carries over** — a screenshot of the legacy `/contractor` screen would
    replace every inference in this spec.
+
+## Implementation notes (2026-09-24)
+
+Verified on the synthetic fixture plus a few added rows (a formatted-NIP twin, a
+deleted `PL…` twin, a foreign VAT number, a row without NIP, two contractor-level
+attachments). The real-data counts in Verification (3 580 / 177 / 208 / 48) still
+need a run against `cru2026` once `cru.sql` is at hand.
+
+### Done
+
+- **`/kontrahenci`** on the spec 05 recipe: filters Nazwa (short or full), NIP, KRS,
+  Miejscowość (searches `address` — there is no city column) and the checkboxes
+  "tylko CEIDG", "pokaż usunięte", "tylko duplikaty NIP" (`?duplikaty=1`) and
+  "tylko nieużywane" (`?nieuzywane=1`: neither party nor debtor on any record,
+  deleted records included). Columns as specified; CEIDG / powiązany / usunięty are
+  badges under the name; "duplikat NIP (N)" sits in the NIP cell. Page size 50, never
+  sorted by `registeredAt`. The duplicates view keeps each group together (ordered by
+  NIP) and shows the number of groups next to "Znaleziono". The old "Identyfikator
+  CRU", "Podmiot powiązany" and "Tylko z umowami" filters were dropped — they are not
+  in the spec's list; the CRU identifier moved to the Audyt section.
+- **NIP normalisation** (`lib/contractors.ts`): separators and a `PL` prefix are
+  stripped before storing and comparing; the database side compares digits
+  (`regexp_replace(…, '[^0-9]', '')`, as Verification query 3), so `123-456-78-90`
+  and `1234567890` are one number in the filter, the autocomplete, the collision
+  check and the duplicate groups (`lib/contractors-db.ts`). Groups count deleted rows
+  too — contracts hang on them, and the 177 figure was measured that way.
+- **`/kontrahenci/[id]`**: Dane · Duplikaty (only when the NIP is shared: the other
+  rows with contract and debt counts; the warning badge links to it) · Umowy and
+  Zobowiązania as two separate lists, paginated independently (`?umowy=`,
+  `?zobowiazania=`), across all three registers with a "Rejestr" column and
+  module-correct links · Dokumenty rejestrowe (`isFinal DESC, id ASC`) · Audyt with
+  "(nieznana)" for a missing date and the login from spec 01's `registeredBy` /
+  `modifiedBy`. Counts exclude soft-deleted and `LEGACY_2021` records.
+- **`/kontrahenci/nowy`** and **`/kontrahenci/[id]/edycja`** share one form: limits
+  190/500/190/500, NIP 10 digits after normalisation, the empty-NIP warning (the save
+  is allowed), and never a silent substitution — create refuses a NIP held by a live
+  row and asks "Kontrahent o tym NIP już istnieje: {nazwa}. Użyć go?"; an admin edit
+  that moves the NIP onto another live row needs "Tak — zapisz mimo to". An unchanged
+  legacy value that is not a 10-digit NIP (a foreign VAT number) is kept as it is, so
+  fixing an address does not force deleting the number.
+- **Authorization (Q57, as proposed):** create is open to any signed-in user; edit,
+  soft-delete and restore use `requireAdmin()` (404 for anyone else) in the actions and
+  on the edit page, and the buttons are rendered for admins only. Checked over HTTP: a
+  non-admin's crafted delete/restore action gets 404 and the row is untouched; the
+  admin's goes through.
+- **`/api/contractors`**: GET keeps `all=1`, matches the NIP by digits and puts an
+  exact 10-digit match first; POST validates with the shared schema (over-long input is
+  rejected, no longer truncated) and answers a live collision with **409** and the
+  existing row. The contract form's "dodaj" handles the 409 with the same question and
+  "Tak — użyj go", warns on an empty NIP, and the pickers show "NIP: …" as the legacy
+  preview does. A per-NIP advisory lock closes the race between the collision check
+  and the insert — a unique index is impossible while duplicates exist.
+- Shared additions, backward compatible: `Pagination` takes `param` and `anchor` (two
+  lists on one page); `REGISTER_LABEL` in `lib/contracts/modules.ts` replaces the
+  contract preview's private copy; the preview uses `contractorLabelWithNip`.
+- Tests: `lib/contractors.test.ts` (normalisation, validation, schema, labels).
+  `tsc`, `yarn test` and `next build` pass; smoke run as `admin` and `jkowalski`.
+
+### Not done
+
+- **Browser check of the forms.** The create/edit forms, the collision question and
+  the picker's 409 path are built and type-checked, and their server side was
+  exercised over HTTP, but they were not clicked through in a browser.
+- The registry-extract list is local to the page. Spec 18's shared
+  `components/ui/attachment-list.tsx` (size, empty-file badge) landed on the
+  integration branch while this was built and is not mounted here yet.
+- The register NIP filters (`/umowy`, `/projekty`, `/ryzyko`) still compare the raw
+  column; they could reuse `idsWithNipFragment` so formatted NIPs match there too.
+
+### Blocked
+
+- **Merge — "Scal z innym" and `mergeContractors` (Q58).** Not built: it reassigns
+  contracts and debts between counterparties and needs the legal department's
+  sign-off and a reviewed list. `?duplikaty=1` is that list, read-only.
+- **REGON/GUS lookup (Q59)** — spec 30, outside this build.
+- **Real-data verification** — needs `cru.sql` loaded into `cru2026`.
+
+### Next steps
+
+1. Load the dump and run Verification queries 1–6; compare the group count on
+   `?duplikaty=1` with query 2 (raw) and query 3 (normalised) — the difference is the
+   formatting-only duplicates Q58 asks about.
+2. Click through `/kontrahenci/nowy`, an admin edit with a colliding NIP, and the
+   contract form's "dodaj" with an existing NIP.
+3. After Q58 sign-off: `mergeContractors(winnerId, loserId)` in one `$transaction`
+   (move `contractorId` / `debtorId` and the attachments, soft-delete the loser, one
+   `ContractHistory` row per contract with `columnName = 'contractor_id'`), admin only,
+   behind a confirm naming the counts.
+4. Swap "Dokumenty rejestrowe" for spec 18's shared `attachment-list.tsx`.
