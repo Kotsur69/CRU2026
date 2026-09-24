@@ -68,7 +68,7 @@ Data is imported and complete; there is no UI at all.
 |---|---|---|---|
 | 20 | [Kontrahenci](20-kontrahenci.md) | todo | 05 |
 | 21 | [Grupy](21-grupy.md) | todo | 03, 04 |
-| 22 | [Lokalizacje](22-lokalizacje.md) | todo | 03 |
+| 22 | [Lokalizacje](22-lokalizacje_done.md) | done | 03 |
 | 23 | [Dostępy](23-dostepy.md) | todo | 03, 04 |
 | 24 | [Raporty](24-raporty.md) | todo | 28 |
 | 25 | [Mailing](25-mailing.md) | todo | 29 |
