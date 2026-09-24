@@ -4,7 +4,7 @@ import { ClickableRow } from "@/components/ui/clickable-row";
 import { ColumnChooser } from "@/components/ui/column-chooser";
 import { Cell, DataTable, ListedNames, Truncated } from "@/components/ui/data-table";
 import { statusTone, endUrgency } from "@/lib/contract-status";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { COLUMN_DEFS, COLUMN_STORAGE_KEY, type ColumnId } from "@/lib/umowy-columns";
 import type { RowPermission } from "@/lib/authz";
@@ -38,6 +38,7 @@ export interface ContractRow {
   domain: string | null;
   formularz: boolean;
   remarks: string | null;
+  lastNote: { body: string | null; createdAt: string } | null;
   permission: RowPermission;
   /** Rekord jest aneksem innej umowy. */
   isAnnex: boolean;
@@ -142,6 +143,14 @@ function cellFor(col: ColumnId, c: ContractRow) {
       return <FlagMark on={c.formularz} />;
     case "remarks":
       return <Truncated text={c.remarks} className="max-w-[14rem]" />;
+    case "lastNote":
+      return (
+        <Truncated
+          text={c.lastNote?.body ?? null}
+          title={c.lastNote ? formatDateTime(c.lastNote.createdAt) : undefined}
+          className="max-w-[14rem]"
+        />
+      );
     case "permition": {
       const p = PERMISSION[c.permission];
       return (

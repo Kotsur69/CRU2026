@@ -9,6 +9,7 @@ import { dateParam, intParam, pageParam, pageSizeParam } from "@/lib/utils";
 import { currentActor, rowPermission } from "@/lib/authz";
 import { ASSIGNEE_SELECT, loadOwnerOptions } from "@/lib/contract-access";
 import { registerWhere } from "@/lib/contracts/scope";
+import { loadLastNotes } from "@/lib/contracts/notes";
 import { ContractsTable, type ContractRow } from "@/components/umowy/contracts-table";
 
 export const dynamic = "force-dynamic";
@@ -209,6 +210,8 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
     }),
   ]);
 
+  const lastNotes = await loadLastNotes(contracts.map((c) => c.id));
+
   const rows: ContractRow[] = contracts.map((c) => ({
     id: c.id,
     identifier: c.identifier ?? "—",
@@ -233,6 +236,7 @@ export default async function UmowyPage({ searchParams }: { searchParams: SP }) 
     domain: c.domain?.name ?? null,
     formularz: c.tempForm ?? false,
     remarks: c.remarks,
+    lastNote: lastNotes.get(c.id) ?? null,
     permission: rowPermission(actor, c),
     isAnnex: c.parent?.module === "CONTRACT",
     annexCount: c._count.annexes,

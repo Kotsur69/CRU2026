@@ -27,6 +27,7 @@ export type ColumnId =
   | "domain"
   | "formularz"
   | "remarks"
+  | "lastNote"
   | "permition"
   | "annex"
   | "attachments";
@@ -66,6 +67,8 @@ export const COLUMN_DEFS: ColumnDef[] = [
   { id: "domain", label: "Rodzaj umowy", defaultVisible: false },
   { id: "formularz", label: "Formularz", defaultVisible: false, align: "center" },
   { id: "remarks", label: "Uwagi", defaultVisible: false },
+  // Legacy ma tę kolumnę tylko na Projektach; tu jest nasza i domyślnie ukryta (Q14 pkt 4).
+  { id: "lastNote", label: "Ostatnia notatka", defaultVisible: false },
   { id: "permition", label: "Uprawnienia", defaultVisible: true },
   { id: "annex", label: "Aneks", defaultVisible: true },
   { id: "attachments", label: "Załączniki", defaultVisible: true },

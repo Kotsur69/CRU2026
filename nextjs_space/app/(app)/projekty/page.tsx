@@ -8,6 +8,7 @@ import { contractorLabel, userLabel } from "@/lib/format";
 import { intParam, pageParam, pageSizeParam } from "@/lib/utils";
 import { ASSIGNEE_SELECT, loadOwnerOptions } from "@/lib/contract-access";
 import { registerWhere } from "@/lib/contracts/scope";
+import { loadLastNotes } from "@/lib/contracts/notes";
 import { ProjectsTable, type ProjectRow } from "@/components/projekty/projects-table";
 
 export const dynamic = "force-dynamic";
@@ -155,29 +156,6 @@ function filterFields(d: Dicts): FilterField[] {
     { name: "companyConnected", label: "Podmiot powiązane", checkbox: true },
     { name: "inProgress", label: "tylko w toku", checkbox: true },
   ];
-}
-
-/**
- * „Ostatnia notatka" to najnowsze dziecko każdego wiersza — klasyczne N+1. Dwa zapytania
- * na stronę niezależnie od jej rozmiaru: najwyższe id notatki na projekt, potem treści.
- */
-async function loadLastNotes(ids: number[]) {
-  if (ids.length === 0) return new Map<number, { body: string | null; createdAt: string }>();
-  const latest = await prisma.remark.groupBy({
-    by: ["contractId"],
-    where: { contractId: { in: ids }, active: true },
-    _max: { id: true },
-  });
-  const noteIds = latest.map((l) => l._max.id).filter((id): id is number => id !== null);
-  const notes = await prisma.remark.findMany({
-    where: { id: { in: noteIds } },
-    select: { contractId: true, body: true, createdAt: true },
-  });
-  return new Map(
-    notes
-      .filter((n): n is typeof n & { contractId: number } => n.contractId !== null)
-      .map((n) => [n.contractId, { body: n.body, createdAt: n.createdAt.toISOString() }]),
-  );
 }
 
 export default async function ProjektyPage({ searchParams }: { searchParams: SP }) {

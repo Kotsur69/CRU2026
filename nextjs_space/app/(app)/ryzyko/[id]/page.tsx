@@ -15,6 +15,11 @@ export default function RyzykoPreviewPage({
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
 
   return (
-    <ContractPreview id={id} module="RISK" showAllAnnexes={searchParams.aneksy === "wszystkie"} />
+    <ContractPreview
+      id={id}
+      module="RISK"
+      showAllAnnexes={searchParams.aneksy === "wszystkie"}
+      showAllNotes={searchParams.notatki === "wszystkie"}
+    />
   );
 }

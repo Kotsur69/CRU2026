@@ -10,13 +10,16 @@ export function Section({
   title,
   children,
   className,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
+  /** Kotwica, np. dla linku „pokaż wszystkie" wracającego do sekcji. */
+  id?: string;
 }) {
   return (
-    <section className={cn("rounded-lg border bg-card p-5 shadow-sm", className)}>
+    <section id={id} className={cn("rounded-lg border bg-card p-5 shadow-sm", className)}>
       <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </h2>

@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import type { ContractModule, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { userLabel } from "@/lib/format";
-import { requireActor, assertCanEditContract, type Actor } from "@/lib/authz";
+import { requireActor, assertCanEditContract, canAskQuestion, type Actor } from "@/lib/authz";
+import { NOTE_MAX_LENGTH } from "@/lib/contracts/notes";
 import {
   contractFormSchema,
   flattenIssues,
@@ -524,6 +525,82 @@ export async function deleteContract(formData: FormData): Promise<void> {
 }
 
 /**
+ * Notatka na rekordzie i powiadomienie jego właścicieli — jeden obieg dla „dodaj
+ * notatkę" i „zadaj pytanie": `remarks` + `shoutbox` + `shoutboxusers`. Kogo
+ * powiadamiamy, ustali docs/features/15 (Q5); na razie właścicieli rekordu bez autora.
+ */
+async function writeNote(
+  tx: Tx,
+  contractId: number,
+  author: Actor,
+  body: string,
+  recipients: readonly number[],
+): Promise<void> {
+  const remark = await tx.remark.create({
+    data: { contractId, userId: author.id, body, active: true },
+  });
+  if (recipients.length === 0) return;
+  const template = await tx.messageTemplate.findFirst({ orderBy: { id: "asc" } });
+  const shout = await tx.shoutbox.create({
+    data: { contractId, remarkId: remark.id, messageId: template?.id ?? null },
+  });
+  await tx.shoutboxRecipient.createMany({
+    data: recipients.map((userId) => ({ shoutboxId: shout.id, userId, isRead: false })),
+  });
+}
+
+/**
+ * Rekord, na którym wolno pisać notatkę: istnieje, nie jest usunięty, a autor może go
+ * czytać. Pytanie to nie edycja — wystarcza prawo odczytu, dlatego przycisk siedzi
+ * w podglądzie tylko do odczytu, jak w legacy (docs/features/14).
+ */
+async function noteTarget(actor: Actor, id: number) {
+  if (!canAskQuestion(actor)) return null;
+  const contract = await prisma.contract.findUnique({
+    where: { id },
+    select: { isDeleted: true, module: true, userAccess: { select: { userId: true } } },
+  });
+  return contract && !contract.isDeleted ? contract : null;
+}
+
+function readNoteBody(formData: FormData): { body: string } | { error: string } {
+  const body = String(formData.get("body") ?? "").trim();
+  if (body.length === 0) return { error: "Notatka nie może być pusta." };
+  if (body.length > NOTE_MAX_LENGTH) {
+    return { error: `Notatka może mieć najwyżej ${NOTE_MAX_LENGTH} znaków.` };
+  }
+  return { body };
+}
+
+export interface NoteState {
+  error?: string;
+  /** Licznik udanych zapisów — formularz czyści pole, gdy się zmieni. */
+  saved?: number;
+}
+
+/** „dodaj notatkę" — wpis w wątku notatek rekordu (docs/features/14). */
+export async function addNote(state: NoteState, formData: FormData): Promise<NoteState> {
+  const actor = await requireActor();
+  const id = Number.parseInt(String(formData.get("recordId") ?? ""), 10);
+  if (!Number.isSafeInteger(id)) return { error: "Nieprawidłowy rekord." };
+
+  const parsed = readNoteBody(formData);
+  if ("error" in parsed) return { error: parsed.error };
+
+  const contract = await noteTarget(actor, id);
+  if (!contract) return { error: "Rekord nie istnieje." };
+
+  const recipients = contract.userAccess.map((a) => a.userId).filter((uid) => uid !== actor.id);
+  await prisma.$transaction((tx) => writeNote(tx, id, actor, parsed.body, recipients));
+
+  const path = modulePath(contract.module);
+  revalidatePath(`${path}/${id}`);
+  // „Ostatnia notatka" w rejestrach czyta ten sam wątek.
+  revalidatePath(path);
+  return { saved: (state.saved ?? 0) + 1 };
+}
+
+/**
  * „zadaj pytanie" — pytanie o umowę trafia do notatek rekordu i powiadamia jego
  * właścicieli. Legacy wysyła je dalej mailem; tu poczty nie ruszamy (brak SMTP i
  * wprost pominięta funkcja wysyłki), więc zostaje obieg wewnętrzny na tych samych
@@ -532,35 +609,16 @@ export async function deleteContract(formData: FormData): Promise<void> {
 export async function askQuestion(formData: FormData): Promise<void> {
   const actor = await requireActor();
   const id = Number.parseInt(String(formData.get("recordId") ?? ""), 10);
-  const body = String(formData.get("body") ?? "").trim();
   if (!Number.isSafeInteger(id)) throw new Error("Nieprawidłowy rekord.");
-  if (body.length === 0) throw new Error("Pytanie nie może być puste.");
 
-  const contract = await prisma.contract.findUnique({
-    where: { id },
-    select: {
-      isDeleted: true,
-      module: true,
-      userAccess: { select: { userId: true } },
-    },
-  });
-  if (!contract || contract.isDeleted) throw new Error("Rekord nie istnieje.");
+  const parsed = readNoteBody(formData);
+  if ("error" in parsed) throw new Error(parsed.error);
 
-  const template = await prisma.messageTemplate.findFirst({ orderBy: { id: "asc" } });
+  const contract = await noteTarget(actor, id);
+  if (!contract) throw new Error("Rekord nie istnieje.");
+
   const recipients = contract.userAccess.map((a) => a.userId).filter((uid) => uid !== actor.id);
-
-  await prisma.$transaction(async (tx) => {
-    const remark = await tx.remark.create({
-      data: { contractId: id, userId: actor.id, body: `Pytanie: ${body}`, active: true },
-    });
-    if (recipients.length === 0) return;
-    const shout = await tx.shoutbox.create({
-      data: { contractId: id, remarkId: remark.id, messageId: template?.id ?? null },
-    });
-    await tx.shoutboxRecipient.createMany({
-      data: recipients.map((userId) => ({ shoutboxId: shout.id, userId, isRead: false })),
-    });
-  });
+  await prisma.$transaction((tx) => writeNote(tx, id, actor, `Pytanie: ${parsed.body}`, recipients));
 
   revalidatePath(`${modulePath(contract.module)}/${id}`);
 }

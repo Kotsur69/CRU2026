@@ -15,6 +15,11 @@ export default function ProjektPreviewPage({
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
 
   return (
-    <ContractPreview id={id} module="PROJECT" showAllAnnexes={searchParams.aneksy === "wszystkie"} />
+    <ContractPreview
+      id={id}
+      module="PROJECT"
+      showAllAnnexes={searchParams.aneksy === "wszystkie"}
+      showAllNotes={searchParams.notatki === "wszystkie"}
+    />
   );
 }

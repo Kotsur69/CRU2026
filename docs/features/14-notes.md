@@ -2,7 +2,7 @@
 id: 14
 title: Notatki (notes)
 group: C-missing-subsystems
-status: todo
+status: in-progress
 depends-on: []
 legacy-tables: [remarks]
 prisma-models: [Remark]
@@ -242,3 +242,32 @@ Manual checks:
 4. **"Ostatnia notatka" on the Umowy register.** Legacy has it only on Projekty.
    Adding it to Umowy is a small improvement and a divergence; recommend offering it
    as an optional column, off by default.
+
+## Implementation notes (2026-09-24)
+
+**Status: in progress.** Everything except deleting a note is built. Q14 asks that
+the vendor or a legacy user confirm whether the notes module is shared with another
+system *before the delete action ships*, so `deleteNote` and its button do not
+exist yet. Once Q14 is answered it is a small addition: a soft delete
+(`active = false`), author or admin only, with a confirm. Reads already filter
+`active: true`.
+
+Built:
+
+- **Thread** (`features/kontrakty/notes-thread.tsx`, server): newest first, own notes
+  marked "(Ty)" (legacy's `myid`), bodyless legacy notes shown as
+  "(pusta notatka)", the empty state "Brak uwag", the first ten plus
+  "pokaż wszystkie (N)" (`?notatki=wszystkie#notatki`).
+- **"dodaj notatkę"** (`note-composer.tsx`, a client island) posts to the new
+  `addNote` action. The textarea clears after a save and keeps its text on an error.
+- **Actions:** `addNote` and `askQuestion` share one path: read access through
+  `canAskQuestion` (now actually called), record exists and is not deleted, body
+  1–4,000 characters after trim, **enforced on the server** (it used to be browser
+  only). One `$transaction` writes the note and the existing fan-out to the record's
+  owners minus the author. Spec 15 owns who gets notified (Q5).
+- **Question page** reuses the thread (up to 30), without the composer.
+- **Registers:** "Ostatnia notatka" is an optional Umowy column, off by default (Q14
+  point 4). Both registers load it through the shared `lib/contracts/notes.ts`
+  (`loadLastNotes`, two queries per page).
+- **Not editable:** notes cannot be edited (open question 3, recommended no).
+- **Q17** (does legacy e-mail a question?) is unchanged: no mail is sent.

@@ -15,6 +15,11 @@ export default function UmowaPreviewPage({
   if (!Number.isSafeInteger(id) || id <= 0) notFound();
 
   return (
-    <ContractPreview id={id} module="CONTRACT" showAllAnnexes={searchParams.aneksy === "wszystkie"} />
+    <ContractPreview
+      id={id}
+      module="CONTRACT"
+      showAllAnnexes={searchParams.aneksy === "wszystkie"}
+      showAllNotes={searchParams.notatki === "wszystkie"}
+    />
   );
 }

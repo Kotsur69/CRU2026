@@ -17,6 +17,7 @@ import {
 import { partitionRelations } from "@/lib/contracts/relations";
 import { buttonClass } from "@/components/ui/button";
 import { ContractActions } from "./contract-actions";
+import { NOTES_SHOWN, NotesThread } from "./notes-thread";
 
 /**
  * Podgląd rekordu `contract` — jeden ekran dla Umów, Projektów i Działu ryzyka
@@ -83,9 +84,16 @@ export interface ContractPreviewProps {
   module: RegisterModule;
   /** `?aneksy=wszystkie` — pełna lista aneksów zamiast pierwszych dziesięciu. */
   showAllAnnexes?: boolean;
+  /** `?notatki=wszystkie` — cały wątek notatek. */
+  showAllNotes?: boolean;
 }
 
-export async function ContractPreview({ id, module, showAllAnnexes = false }: ContractPreviewProps) {
+export async function ContractPreview({
+  id,
+  module,
+  showAllAnnexes = false,
+  showAllNotes = false,
+}: ContractPreviewProps) {
   const c = await prisma.contract.findUnique({
     where: { id },
     include: {
@@ -488,23 +496,16 @@ export async function ContractPreview({ id, module, showAllAnnexes = false }: Co
         )}
       </Section>
 
-      {/* Notatki — pełny wątek z legacy `remarks` */}
-      <Section title="Notatki">
-        {c.remarkEntries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Brak notatek.</p>
-        ) : (
-          <ul className="space-y-3">
-            {c.remarkEntries.map((r) => (
-              <li key={r.id} className="border-b border-border/60 pb-3 last:border-0 last:pb-0">
-                <div className="text-xs text-muted-foreground">
-                  {r.user ? userLabel(r.user) : "—"} ·{" "}
-                  <span className="tabular-nums">{formatDateTime(r.createdAt)}</span>
-                </div>
-                <p className="mt-1 whitespace-pre-line text-sm">{r.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Notatki — wątek z legacy `remarks` i „dodaj notatkę" (docs/features/14). */}
+      <Section title="Notatki" id="notatki">
+        <NotesThread
+          recordId={c.id}
+          notes={showAllNotes ? c.remarkEntries : c.remarkEntries.slice(0, NOTES_SHOWN)}
+          total={c.remarkEntries.length}
+          moreHref={`${backHref}/${c.id}?notatki=wszystkie#notatki`}
+          actorId={actor?.id ?? null}
+          composer={actor !== null}
+        />
       </Section>
 
       {/* Załączniki (przez StorageAdapter) */}

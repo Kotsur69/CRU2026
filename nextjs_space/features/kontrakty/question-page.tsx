@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { formatDateTime, userLabel } from "@/lib/format";
+import { userLabel } from "@/lib/format";
 import { currentActor } from "@/lib/authz";
 import { Button } from "@/components/ui/button";
 import { CONTROL_CLASS } from "@/components/ui/form";
+import { Section } from "@/components/ui/section";
 import { askQuestion } from "./actions";
+import { NotesThread } from "./notes-thread";
 
 /**
  * „zadaj pytanie" — pytanie do rekordu.
@@ -91,26 +93,17 @@ export async function QuestionPage({ id, basePath }: QuestionPageProps) {
         </div>
       </form>
 
-      <section className="rounded-lg border bg-card p-5 shadow-sm">
-        <h2 className="mb-3 font-heading text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Notatki i pytania ({contract.remarkEntries.length})
-        </h2>
-        {contract.remarkEntries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Brak notatek.</p>
-        ) : (
-          <ul className="space-y-3">
-            {contract.remarkEntries.map((r) => (
-              <li key={r.id} className="border-b border-border/60 pb-3 last:border-0 last:pb-0">
-                <div className="text-xs text-muted-foreground">
-                  {r.user ? userLabel(r.user) : "—"} ·{" "}
-                  <span className="tabular-nums">{formatDateTime(r.createdAt)}</span>
-                </div>
-                <p className="mt-1 whitespace-pre-line text-sm">{r.body}</p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <Section title={`Notatki i pytania (${contract.remarkEntries.length})`}>
+        {/* Ten sam wątek co na podglądzie rekordu (docs/features/14), bez pola notatki —
+            tutaj formularzem jest pytanie. */}
+        <NotesThread
+          recordId={contract.id}
+          notes={contract.remarkEntries}
+          total={contract.remarkEntries.length}
+          actorId={actor.id}
+          composer={false}
+        />
+      </Section>
     </div>
   );
 }
