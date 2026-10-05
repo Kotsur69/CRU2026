@@ -1,6 +1,18 @@
 // Abstrakcja magazynu plików. UI/routing zależą TYLKO od tego interfejsu —
 // nigdy od konkretnego backendu. Docelowo: fizyczny serwer (Bytom) / SharePoint / S3.
 
+/**
+ * Thrown when the deployment has no file storage attached (STORAGE_DRIVER=none),
+ * e.g. a cloud test deployment before the OneDrive/Graph adapter exists. Routes map
+ * it to 503 so users see "not available yet" instead of "not found".
+ */
+export class StorageUnavailableError extends Error {
+  constructor() {
+    super("File storage is not configured for this deployment");
+    this.name = "StorageUnavailableError";
+  }
+}
+
 export interface StoredObject {
   key: string; // opaque klucz (Attachment.storageKey)
   filename: string;

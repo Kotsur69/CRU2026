@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { currentActor } from "@/lib/authz";
-import { getStorage } from "@/lib/storage";
+import { getStorage, StorageUnavailableError } from "@/lib/storage";
 
 // Proxy pobierania załączników przez StorageAdapter (adapter lokalny nie ma URL publicznego).
 
@@ -70,7 +70,13 @@ export async function GET(
     stat = await storage.stat(key);
     if (!stat) return new NextResponse("Not found", { status: 404 });
     buffer = await storage.getBuffer(key);
-  } catch {
+  } catch (err) {
+    if (err instanceof StorageUnavailableError) {
+      return new NextResponse(
+        "Załączniki nie są jeszcze dostępne w tej wersji testowej aplikacji.",
+        { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
+      );
+    }
     return new NextResponse("Bad request", { status: 400 });
   }
 

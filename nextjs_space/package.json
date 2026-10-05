@@ -8,6 +8,7 @@
     "start": "next start -p 3100",
     "start:prod": "next start -H 127.0.0.1 -p 3100",
     "lint": "next lint",
+    "postinstall": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "users:create-test": "tsx --require dotenv/config scripts/accounts.ts create-test",
     "users:reset-password": "tsx --require dotenv/config scripts/accounts.ts reset-password",
