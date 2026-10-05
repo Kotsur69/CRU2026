@@ -170,7 +170,10 @@ if ($NoDev) {
     exit 0
 }
 
-Step "Start dev  ->  http://localhost:$Port  (login: admin / admin123)"
+# No credentials are printed here on purpose: accounts are created with
+# `yarn users:create-test` / `yarn users:reset-password <login>`, which show
+# the generated password once.
+Step "Start dev  ->  http://localhost:$Port"
 Invoke-Yarn dev
 
 } catch {

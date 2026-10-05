@@ -14,6 +14,8 @@ declare module "next-auth" {
   interface User {
     login?: string;
     role?: string;
+    /** `User.sessionVersion` at sign-in; a later bump revokes the session. */
+    sessionVersion?: number;
   }
 }
 
@@ -22,5 +24,9 @@ declare module "next-auth/jwt" {
     uid?: number;
     login?: string;
     role?: string;
+    /** Session version captured at sign-in. */
+    sv?: number;
+    /** Epoch ms of the sign-in, for the absolute timeout. */
+    authTime?: number;
   }
 }

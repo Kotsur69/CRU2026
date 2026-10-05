@@ -81,6 +81,15 @@ model User {
   loginCount    Int      @default(0)
   createdAt     DateTime @default(now())
 
+  // ── Sign-in security (lib/auth.ts) ──
+  /// Consecutive failed sign-ins; reset on success. Drives the temporary lockout.
+  failedLoginCount  Int       @default(0)
+  lockedUntil       DateTime?
+  /// Bumped on password change or deactivation — every JWT carrying an older value is rejected.
+  sessionVersion    Int       @default(0)
+  passwordChangedAt DateTime?
+  lastLoginAt       DateTime?
+
   groups              UserGroup[]
   groupHistory        UserGroupHistory[]
   locations           UserLocation[]
@@ -94,8 +103,27 @@ model User {
   remarks             Remark[]
   historyEntries      ContractHistory[]
   shoutboxEntries     ShoutboxRecipient[]
+  loginEvents         LoginEvent[]
 
   @@index([active])
+}
+
+/// Audit trail of sign-in attempts. Also the source of the per-IP rate limit.
+model LoginEvent {
+  id        Int      @id @default(autoincrement())
+  /// Null when the submitted login matched no account.
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// The login as typed, truncated — kept so attacks on unknown names stay visible.
+  login     String
+  ip        String
+  success   Boolean
+  /// ok | bad_credentials | locked | ip_limited | invalid_input
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([ip, createdAt])
+  @@index([userId, createdAt])
 }
 
 /// Legacy `group` — functional roles: Dział prawny, Właściciele umów, Opiniujący,
@@ -497,6 +525,8 @@ model Attachment {
   @@index([contractId])
   @@index([contractorId])
   @@index([isFinal])
+  /// The download route resolves every request by key (app/api/files/[...key]).
+  @@index([storageKey])
 }
 
 // ─────────────────────────────────────────────────────────────────────────

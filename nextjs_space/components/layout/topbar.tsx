@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { LogOut } from "lucide-react";
+import { LogOut, UserRound } from "lucide-react";
 import { NAV_ITEMS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -60,9 +60,15 @@ export function Topbar() {
             <LangSwitch />
           </Suspense>
           {session?.user?.name && (
-            <span className="hidden text-sm text-white/80 sm:inline">
-              {session.user.name}
-            </span>
+            <Link
+              href="/konto"
+              title="Moje konto"
+              className="flex items-center gap-1.5 rounded px-2 py-1.5 text-sm text-white/80 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+            >
+              <UserRound className="h-4 w-4" aria-hidden />
+              <span className="hidden sm:inline">{session.user.name}</span>
+              <span className="sr-only sm:hidden">Moje konto</span>
+            </Link>
           )}
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}

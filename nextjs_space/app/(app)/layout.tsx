@@ -2,6 +2,8 @@ import { Topbar } from "@/components/layout/topbar";
 import { MainNav } from "@/components/layout/main-nav";
 
 // Shell zalogowanej aplikacji: topbar + menu 10 modułów + treść.
+// The session gate (incl. revocation) is in middleware.ts, not here: layouts are
+// skipped on client-side navigation, so a check here would not cover RSC requests.
 export default function AppLayout({
   children,
 }: {
