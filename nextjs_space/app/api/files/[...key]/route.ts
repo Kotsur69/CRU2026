@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import path from "path";
 import { prisma } from "@/lib/prisma";
 import { currentActor } from "@/lib/authz";
-import { getStorage, StorageUnavailableError } from "@/lib/storage";
+import { getStorage, StorageBackendError, StorageUnavailableError } from "@/lib/storage";
 
 // Proxy pobierania załączników przez StorageAdapter (adapter lokalny nie ma URL publicznego).
 
@@ -28,6 +28,23 @@ function downloadName(name: string | null, key: string): string {
   // eslint-disable-next-line no-control-regex
   const base = (name ?? "").replace(/[\x00-\x1f\x7f/\\]/g, "").trim().slice(0, 180) || "plik";
   return ext && !base.toLowerCase().endsWith(ext) ? `${base}${ext}` : base;
+}
+
+/**
+ * Maps adapter failures to responses. A key rejected by the adapter (path traversal)
+ * is a bad request; a broken backend is the server's problem, logged and reported as 502.
+ */
+function storageErrorResponse(err: unknown): NextResponse {
+  const text = (body: string, status: number) =>
+    new NextResponse(body, { status, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  if (err instanceof StorageUnavailableError) {
+    return text("Załączniki nie są jeszcze dostępne w tej wersji testowej aplikacji.", 503);
+  }
+  if (err instanceof StorageBackendError) {
+    console.error("[api/files] storage backend failed:", err.message);
+    return text("Magazyn plików chwilowo nie odpowiada. Spróbuj ponownie za chwilę.", 502);
+  }
+  return text("Bad request", 400);
 }
 
 function decodeKey(segments: string[]): string | null {
@@ -62,6 +79,21 @@ export async function GET(
 
   const storage = getStorage();
 
+  // Backends that hand out short-lived URLs (SharePoint) serve the bytes themselves:
+  // the session and the Attachment row are already checked above, and large files
+  // never pass through the app server (Vercel caps responses at ~4.5 MB).
+  if (storage.getDirectDownloadUrl) {
+    try {
+      const url = await storage.getDirectDownloadUrl(key);
+      if (!url) return new NextResponse("Not found", { status: 404 });
+      const redirect = NextResponse.redirect(url, 302);
+      redirect.headers.set("Cache-Control", "private, no-store");
+      return redirect;
+    } catch (err) {
+      return storageErrorResponse(err);
+    }
+  }
+
   // Klucz pochodzi z URL-a, więc adapter może go odrzucić (próba wyjścia poza root).
   // To błąd żądania, nie awaria serwera — nie pozwalamy mu wypłynąć jako 500.
   let buffer: Buffer;
@@ -71,13 +103,7 @@ export async function GET(
     if (!stat) return new NextResponse("Not found", { status: 404 });
     buffer = await storage.getBuffer(key);
   } catch (err) {
-    if (err instanceof StorageUnavailableError) {
-      return new NextResponse(
-        "Załączniki nie są jeszcze dostępne w tej wersji testowej aplikacji.",
-        { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } },
-      );
-    }
-    return new NextResponse("Bad request", { status: 400 });
+    return storageErrorResponse(err);
   }
 
   const extension = path.extname(key).slice(1).toLowerCase();

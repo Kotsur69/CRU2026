@@ -132,6 +132,26 @@ passwords). Accounts that exist:
 | `INTERNAL_APP_URL` | `https://cru-2026-deployed.vercel.app` | Where the middleware checks sessions. |
 | `STORAGE_DRIVER` | `none` | Until the OneDrive adapter exists. |
 
+#### Switching attachments on (after IT grants access)
+
+The adapter is ready (`lib/storage/sharepoint-adapter.ts`, read-only). Once IT has
+created the app registration with `Sites.Selected` and a `read` grant on the site:
+
+| Name | Value |
+|---|---|
+| `STORAGE_DRIVER` | `sharepoint` (instead of `none`) |
+| `GRAPH_TENANT_ID` | Directory (tenant) ID from IT |
+| `GRAPH_CLIENT_ID` | Application (client) ID from IT |
+| `GRAPH_CLIENT_SECRET` | client secret from IT — **Secret**, never in chat or git |
+| `GRAPH_SITE_URL` | e.g. `https://arcelormittal.sharepoint.com/sites/CRU2026` |
+| `GRAPH_ROOT_FOLDER` | folder in the site's default library that contains `attachments/` (empty = library root) |
+
+Upload the `attachments` folder unchanged (same file names as in the database), then
+Redeploy. Downloads: `/api/files/...` still checks the session and the `Attachment`
+row, then redirects to a short-lived Microsoft download link (files never pass
+through Vercel, so its ~4.5 MB limit does not apply; files download rather than open
+in a tab). Uploads keep answering 503 until the app also gets a write grant.
+
 **Any change to these needs a Redeploy** (Deployments → latest → ⋯ → Redeploy):
 `NEXTAUTH_URL` is inlined into the middleware at build time.
 

@@ -1,9 +1,10 @@
 import type { StorageAdapter } from "./types";
 import { LocalStorageAdapter } from "./local-adapter";
 import { UnavailableStorageAdapter } from "./unavailable-adapter";
+import { SharePointStorageAdapter, sharePointConfigFromEnv } from "./sharepoint-adapter";
 
 export type { StorageAdapter, StoredObject } from "./types";
-export { StorageUnavailableError } from "./types";
+export { StorageBackendError, StorageUnavailableError } from "./types";
 
 let instance: StorageAdapter | null = null;
 
@@ -17,6 +18,10 @@ export function getStorage(): StorageAdapter {
       instance = new LocalStorageAdapter(
         process.env.STORAGE_LOCAL_ROOT ?? "./storage-local",
       );
+      break;
+    // Read-only SharePoint/OneDrive library through Microsoft Graph (GRAPH_* variables).
+    case "sharepoint":
+      instance = new SharePointStorageAdapter(sharePointConfigFromEnv());
       break;
     // Cloud test deployment without file storage yet: routes answer 503.
     case "none":

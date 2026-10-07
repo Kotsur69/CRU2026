@@ -13,6 +13,17 @@ export class StorageUnavailableError extends Error {
   }
 }
 
+/**
+ * The storage backend (e.g. Microsoft Graph) failed or is unreachable. Unlike a bad
+ * key this is not the caller's fault — routes answer 502 and log it.
+ */
+export class StorageBackendError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "StorageBackendError";
+  }
+}
+
 export interface StoredObject {
   key: string; // opaque klucz (Attachment.storageKey)
   filename: string;
@@ -36,6 +47,14 @@ export interface StorageAdapter {
 
   /** URL/ścieżka do pobrania — dla adaptera lokalnego trasa proxy /api/files. */
   getDownloadUrl(key: string): Promise<string>;
+
+  /**
+   * Short-lived URL the browser may fetch the bytes from directly, or null when the
+   * object does not exist. Backends that can hand one out implement it so large files
+   * skip the app server (Vercel caps response bodies at ~4.5 MB); the /api/files route
+   * still checks the session and the Attachment row before redirecting.
+   */
+  getDirectDownloadUrl?(key: string): Promise<string | null>;
 
   /**
    * Zapis nowego obiektu. Klucz wyznacza adapter (legacy: `attachments/<md5>.<ext>`),
