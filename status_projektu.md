@@ -11,6 +11,19 @@ Poza bieżącym zakresem (były w greenfield planie z 15.07): kalendarz i automa
 - Dane mogą być poufne - mieszczą się w istniejącej klasyfikacji bezpieczeństwa SharePoint; to nie jest system rządowy, dane historyczne w pełni dostępne (fizyczny serwer w Bytomiu)
 - Plany przyszłościowe (nie wcześniej niż za rok, poza obecnym zakresem): wdrożenie światowe poza Polską - będzie wymagało rozważenia migracji hostingu na AWS zamiast Abacus
 
+## 📍 NA CZYM STOIMY (2026-10-07)
+- **Wersja testowa działa w chmurze:** https://cru-2026-deployed.vercel.app — Vercel (Hobby, darmowy, Frankfurt) + baza **Neon** (Postgres 18, Frankfurt, UE). Wszystkie dane przeniesione (10 735 umów), konta `test1`–`test5`. Działa z sieci firmowej i z domu; komputer w biurze nie jest już potrzebny. Testuje maks. 4–5 zaufanych osób.
+- **Neon to jedyna żywa baza.** Lokalny Postgres to migawka z 05.10 tylko do developmentu — nie wprowadzać tam danych.
+- **Załączniki wyłączone** (`STORAGE_DRIVER=none` → komunikat „nie są jeszcze dostępne”). Kopia wszystkich plików (39 281, 48 GB) leży w OneDrive `CRU2026\attachments` z tymi samymi kluczami co w bazie.
+- Instrukcja obsługi (zmienne, deploy, migracje, konta, backupy): **`docs/deployment.md`**.
+
+**Co dalej (kolejność):**
+1. Mail do IT: zgoda na Vercel + Neon (dane w UE) oraz **rejestracja aplikacji w Entra ID z dostępem do plików (Microsoft Graph)**.
+2. Po zgodzie IT: adapter OneDrive/SharePoint w `lib/storage/` → załączniki działają (pobieranie przez krótkotrwały link Graph, bo Vercel Hobby ma limit ~4,5 MB odpowiedzi).
+3. Codzienna kopia bazy Neon do OneDrive (`pg_dump` ≥ 18).
+4. Specyfikacja 03 (uprawnienia do odczytu) — **warunek wpuszczenia kogokolwiek spoza grupy testowej**.
+5. Decyzja o docelowym hostingu: Vercel Pro + Neon płatny vs serwer firmowy.
+
 ## ⚠️ KIERUNEK BIEŻĄCY (2026-08-31) — czytaj przed sekcjami poniżej
 Korekta kierunku z 31.07, po analizie zrzutu bazy legacy `cru.sql`. **Nie pracujemy już na bazie legacy.** Budujemy **własny PostgreSQL 16** i **migrujemy do niego dane** ze zrzutu; stack to **Next.js 14 (App Router) + TypeScript + Prisma**. Adobe Acrobat Sign pozostaje główną nową funkcją. Cutover przestaje być „nadpisaniem plików `.php`" — jest **równoległym biegiem obu rejestrów i datowanym przełącznikiem danych**.
 
@@ -51,6 +64,15 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 - `historia_wersji/Szablony/` - szablony do wykorzystania
 
 ## Log sesji
+
+### 2026-10-05 – 2026-10-07 (wersja 0.3: bezpieczeństwo logowania + wdrożenie testowe)
+- **Utwardzone logowanie i sesje:** blokada konta 15 min po 5 błędnych hasłach (atomowo, odporna na równoległe próby), limit z jednego IP, jednakowy komunikat i czas odpowiedzi, dziennik `LoginEvent`; sesje 8 h bezczynności / 12 h maks., unieważnianie wszystkich sesji po zmianie hasła (`sessionVersion`, sprawdzane w `middleware.ts` przy każdym żądaniu, także RSC). Ekran **Moje konto**, 5 kont testowych, skrypty `users:create-test` / `users:reset-password`. Pobieranie plików tylko zarejestrowanych w bazie, HTML/Office wyłącznie do pobrania, nagłówki bezpieczeństwa (CSP, HSTS, ramki).
+- **Próba 1 — PC w biurze + tunel Cloudflare (05.10), porzucona.** Brak uprawnień admina wykluczył Tailscale; quick tunnel działał z zewnątrz, ale **w sieci firmowej logowanie niemożliwe**: Zscaler przekierowuje każde żądanie do `*.trycloudflare.com` przez `gateway.zscalertwo.net` (także po SSO), więc `fetch()` formularza NextAuth staje się żądaniem cross-origin i przeglądarka je blokuje (szara strona „Error”). Zweryfikowane nagraniem ruchu w przeglądarce Mati. `*.vercel.app` i `abacus.ai` nie są przekierowywane.
+- **Próba 2 — dostęp po IP w LAN, odrzucona:** zapora Windows `BlockInbound`, reguły tylko z GPO; test z komputera kolegi → timeout.
+- **Wdrożenie 3 — Vercel + Neon (07.10), działa.** Baza przeniesiona `pg_dump`/`pg_restore` z lokalnego PG 16 do Neon PG 18 (Frankfurt). Zmiany w kodzie: `STORAGE_DRIVER=none` (adapter zwracający 503 z komunikatem), `postinstall: prisma generate`. Zmienne: `DATABASE_URL` (pooled), `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `INTERNAL_APP_URL`, `STORAGE_DRIVER`. Hasło bazy zrotowane po konfiguracji, pliki z sekretami usunięte, tunel i jego autostart wyłączone.
+- **Załączniki skopiowane do OneDrive** (`OneDrive - ArcelorMittal\CRU2026\attachments`, robocopy, 39 281 plików / 48,1 GB, 0 błędów). Abacus proponował własny magazyn w chmurze — odłożone na rzecz OneDrive (firmowy M365, bez nowego dostawcy). Folder współdzielony przez kontraktora (`CRU260810`) — sprawdzić typ linku i nie polegać na nim (zniknie z jego kontem).
+- **Decyzja Mati:** darmowy plan Vercel Hobby mimo zapisu „non-commercial” — świadomie, na krótki test z ≤ 5 osobami.
+- **Zaktualizowane dokumenty:** `docs/deployment.md` (przepisany na Vercel + Neon), `CRU2026_Raport_Wersji_0.3.docx` (okres do 07.10, wiersze o Zscalerze, Vercel/Neon, OneDrive), `README.md`, ten plik.
 
 ### 2026-08-31
 - **Zrzut bazy legacy dostarczony.** `cru.sql` (45,7 MB, 447 528 linii, 35 tabel, HeidiSQL, MySQL 5.1.73) trafił do repo. To zamknęło Fazę 0a w części schematowej — nie potrzebujemy już `mysqldump --no-data` od adminów.
@@ -139,8 +161,17 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 - [ ] Poziom podpisu z działem prawnym: zwykły e-podpis eIDAS vs kwalifikowany QES
 - [ ] Security/compliance sign-off — **zawężony 2026-08-31:** rejestr stoi na własnym Postgresie na infrastrukturze firmowej, więc rezydencja danych dotyczy już tylko chmury Adobe
 
+### Wdrożenie testowe (od 2026-10-07)
+- [ ] **Zgoda IT** na Vercel + Neon (dane firmowe u zewnętrznych dostawców, region UE)
+- [ ] **Rejestracja aplikacji w Entra ID** z dostępem do plików (Graph, admin consent) → adapter OneDrive/SharePoint → włączenie załączników
+- [ ] Przeniesienie plików z osobistego OneDrive na witrynę SharePoint/Teams (niezależną od jednej osoby)
+- [ ] Codzienna kopia bazy Neon (`pg_dump` w wersji ≥ 18) do OneDrive
+- [ ] Rotacja hasła konta `admin` (`yarn users:reset-password admin` z `DATABASE_URL` Neona) i usunięcie `SEED_ADMIN_PASSWORD` z lokalnego `.env`
+- [ ] Sprawdzić, czy `git push` na `main` sam buduje wersję na Vercel (konto Vercel ≠ autor commitów); jeśli nie — „Create Deployment → main”
+- [ ] Przed szerszym użyciem: Vercel Pro (Hobby = użytek niekomercyjny) albo hosting firmowy
+
 ### Do rozstrzygnięcia
-- [ ] Gdzie stoi produkcja: wewnętrzny serwer w Katowicach czy serwer bytomski
+- [ ] Gdzie stoi produkcja: Vercel + Neon (płatne), wewnętrzny serwer w Katowicach czy serwer bytomski
 - [ ] **8 załączników bez pliku w eksporcie** — dopytać administratorów serwera bytomskiego; pełna lista z ID umów: `yarn db:verify-files`
 - [ ] Model „ważnych osób" podpisujących: stały preset czy definiowany per-umowa (wpływa na UI Fazy 4)
 - [ ] Docelowe miejsce przechowywania plików (serwer bytomski vs. SharePoint vs. AWS) — czeka na rozstrzygnięcie firmowych rozmów z AWS; `StorageAdapter` izoluje tę decyzję od schematu

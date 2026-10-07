@@ -46,7 +46,9 @@ yarn db:seed                # słowniki z audytu + user admin + 3 umowy
 yarn dev                    # http://localhost:3100
 ```
 
-Logowanie testowe: **admin / admin123** (natywny login, bez SSO).
+Logowanie: **admin** z hasłem z `SEED_ADMIN_PASSWORD` w `.env` (seed go wymaga, min. 12 znaków);
+nowe hasło w dowolnej chwili: `yarn users:reset-password admin`. Wersja testowa w chmurze
+i jej konta: [`../docs/deployment.md`](../docs/deployment.md).
 
 ## Co jest w szkielecie
 - Natywny login (NextAuth Credentials + bcrypt) i ochrona tras (`middleware.ts`).
