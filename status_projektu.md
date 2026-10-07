@@ -18,8 +18,8 @@ Poza bieżącym zakresem (były w greenfield planie z 15.07): kalendarz i automa
 - Instrukcja obsługi (zmienne, deploy, migracje, konta, backupy): **`docs/deployment.md`**.
 
 **Co dalej (kolejność):**
-1. Mail do IT: zgoda na Vercel + Neon (dane w UE) oraz **rejestracja aplikacji w Entra ID z dostępem do plików (Microsoft Graph)**.
-2. Po zgodzie IT: adapter OneDrive/SharePoint w `lib/storage/` → załączniki działają (pobieranie przez krótkotrwały link Graph, bo Vercel Hobby ma limit ~4,5 MB odpowiedzi).
+1. **Czekamy na IT** (prośba przekazana 2026-10-07 przez Łukasza): witryna SharePoint „CRU2026”, rejestracja aplikacji w Entra ID z `Sites.Selected` (read na tę witrynę), akceptacja Vercel + Neon. Lista i instrukcja: `README.md` → „Na co czekamy od IT”.
+2. **Adapter SharePoint gotowy** (`lib/storage/sharepoint-adapter.ts`, commit `1ee635f`, przetestowany na atrapie Graph). Po odpowiedzi IT: wgrać `attachments/` na witrynę, ustawić zmienne `GRAPH_*` i `STORAGE_DRIVER=sharepoint` w Vercelu, Redeploy, sprawdzić pobranie pliku.
 3. Codzienna kopia bazy Neon do OneDrive (`pg_dump` ≥ 18).
 4. Specyfikacja 03 (uprawnienia do odczytu) — **warunek wpuszczenia kogokolwiek spoza grupy testowej**.
 5. Decyzja o docelowym hostingu: Vercel Pro + Neon płatny vs serwer firmowy.
@@ -163,7 +163,9 @@ Kierunek z 2026-07-15 (własny Postgres w Abacus + replika 1:1 legacy w Next.js)
 
 ### Wdrożenie testowe (od 2026-10-07)
 - [ ] **Zgoda IT** na Vercel + Neon (dane firmowe u zewnętrznych dostawców, region UE)
-- [ ] **Rejestracja aplikacji w Entra ID** z dostępem do plików (Graph, admin consent) → adapter OneDrive/SharePoint → włączenie załączników
+- [ ] **Rejestracja aplikacji w Entra ID** z dostępem do plików (Graph `Sites.Selected`, admin consent) — Mati nie ma uprawnień (sprawdzone: 401), prośba wysłana do IT przez Łukasza 2026-10-07
+- [x] Adapter SharePoint/OneDrive (tylko odczyt, przekierowanie na link Microsoftu) — gotowy 2026-10-07, czeka na dane od IT
+- [ ] Włączenie załączników: wgranie `attachments/` na witrynę + zmienne `GRAPH_*` + `STORAGE_DRIVER=sharepoint` w Vercelu (instrukcja w `README.md`)
 - [ ] Przeniesienie plików z osobistego OneDrive na witrynę SharePoint/Teams (niezależną od jednej osoby)
 - [ ] Codzienna kopia bazy Neon (`pg_dump` w wersji ≥ 18) do OneDrive
 - [ ] Rotacja hasła konta `admin` (`yarn users:reset-password admin` z `DATABASE_URL` Neona) i usunięcie `SEED_ADMIN_PASSWORD` z lokalnego `.env`

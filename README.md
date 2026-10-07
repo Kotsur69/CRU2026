@@ -14,10 +14,56 @@ z żadnym państwowym rejestrem umów.
 - **Wersja testowa:** https://cru-2026-deployed.vercel.app — Vercel + baza Neon
   (Frankfurt, UE). Dostęp tylko dla kilku zaufanych testerów (konta `test1`–`test5`).
 - **Dane:** zmigrowane ze zrzutu legacy — ok. 20 tys. rekordów (10 735 aktywnych umów),
-  kontrahenci, słowniki. Załączniki (39 281 plików, 48 GB) są w OneDrive i czekają na
-  podpięcie przez Microsoft Graph — w wersji testowej są wyłączone.
+  kontrahenci, słowniki. Załączniki (39 281 plików, 48 GB) są w OneDrive; adapter
+  SharePoint jest gotowy, ale w wersji testowej pliki są wyłączone do czasu zgody IT
+  (patrz [Na co czekamy od IT](#na-co-czekamy-od-it)).
 - **Co dalej:** zgoda IT i dostęp do plików przez Graph → uprawnienia do odczytu
   (specyfikacja 03) → decyzja o docelowym hostingu.
+
+## Na co czekamy od IT
+
+Prośba wysłana 2026-10-07 (przez przełożonego). Bez niej aplikacja widzi w bazie, że
+załącznik istnieje, ale nie może go otworzyć ani pobrać.
+
+| # | Prośba | Po co |
+|---|---|---|
+| 1 | Witryna SharePoint „CRU2026” (albo biblioteka w istniejącej witrynie) | Miejsce na załączniki niezależne od jednej osoby (dziś leżą tymczasowo na OneDrive Mati) |
+| 2 | Rejestracja aplikacji „CRU2026 Files” w Entra ID (single tenant, client secret lub certyfikat) | Tożsamość aplikacji w Microsoft 365 — sami nie mamy uprawnień do jej utworzenia |
+| 3 | Uprawnienie Microsoft Graph **`Sites.Selected` (Application)** + admin consent + grant **`read`** tylko na witrynę z pkt 1 | Aplikacja czyta wyłącznie tę jedną witrynę — nic nie zapisuje, nie usuwa i nie widzi innych dokumentów |
+| 4 | Akceptacja wersji testowej na Vercel + Neon (region UE) | Dane umów u zewnętrznych dostawców na czas testów |
+
+Od IT wracają trzy wartości: **Directory (tenant) ID**, **Application (client) ID** i
+**client secret** (z datą wygaśnięcia). Sekret trafia wyłącznie do ustawień Vercela —
+nigdy do czatu, maila ani repozytorium.
+
+## Włączenie załączników (dla osoby wdrażającej)
+
+Kod jest gotowy (`nextjs_space/lib/storage/sharepoint-adapter.ts`, tylko odczyt).
+Po odpowiedzi IT:
+
+1. **Pliki:** wgraj folder `attachments` (39 281 plików, nazwy bez zmian — muszą
+   zgadzać się z kluczami w bazie) do biblioteki dokumentów witryny. Źródło: OneDrive
+   `CRU2026\attachments` albo `nextjs_space/storage-local/attachments`.
+2. **Vercel → Settings → Environment Variables:**
+
+   | Zmienna | Wartość |
+   |---|---|
+   | `STORAGE_DRIVER` | `sharepoint` (zamiast `none`) |
+   | `GRAPH_TENANT_ID` | Directory (tenant) ID od IT |
+   | `GRAPH_CLIENT_ID` | Application (client) ID od IT |
+   | `GRAPH_CLIENT_SECRET` | client secret od IT — typ **Secret** |
+   | `GRAPH_SITE_URL` | adres witryny, np. `https://arcelormittal.sharepoint.com/sites/CRU2026` |
+   | `GRAPH_ROOT_FOLDER` | folder w bibliotece, w którym leży `attachments/` (puste = katalog główny biblioteki) |
+3. **Redeploy** (Deployments → najnowszy → ⋯ → Redeploy).
+4. **Sprawdzenie:** zaloguj się, otwórz umowę z załącznikiem i kliknij plik — powinien
+   się pobrać. Błąd 502 „Magazyn plików chwilowo nie odpowiada” = złe dane od IT albo
+   brak grantu na witrynę (szczegóły w Vercel → Logs).
+5. **Kalendarz:** client secret wygasa (zwykle 6–24 mies.) — przed datą wygaśnięcia
+   poproś IT o nowy i podmień `GRAPH_CLIENT_SECRET`.
+
+Wgrywanie nowych plików pozostaje wyłączone (komunikat 503), dopóki aplikacja nie
+dostanie także uprawnienia do zapisu. Wycofanie: `STORAGE_DRIVER=none` + Redeploy.
+Pełny runbook: [`docs/deployment.md`](docs/deployment.md).
 
 Szczegóły: [`status_projektu.md`](status_projektu.md) (stan i log),
 [`docs/deployment.md`](docs/deployment.md) (wdrożenie i bezpieczeństwo),
@@ -32,7 +78,7 @@ Szczegóły: [`status_projektu.md`](status_projektu.md) (stan i log),
 | Moduły pomocnicze (odczyt) | Kontrahenci, Grupy, Lokalizacje, Dostępy, Raporty, Mailing |
 | Logowanie | Natywny login + hasło (bcrypt), blokada po 5 błędnych próbach, limit z IP, dziennik prób, sesje 8 h / 12 h, unieważnianie sesji po zmianie hasła |
 | Moje konto | Każdy użytkownik zmienia swoje imię, nazwisko i hasło (`/konto`) |
-| Pliki | Pobieranie tylko zarejestrowanych załączników, bezpieczne typy w przeglądarce; magazyn wymienny (`STORAGE_DRIVER`: `local` / `none`, docelowo SharePoint) |
+| Pliki | Pobieranie tylko zarejestrowanych załączników, bezpieczne typy w przeglądarce; magazyn wymienny (`STORAGE_DRIVER`: `local` / `none` / `sharepoint` — ten ostatni czeka na IT) |
 | Bezpieczeństwo strony | CSP, HSTS, zakaz osadzania w ramkach i inne nagłówki |
 
 **Jeszcze nie ma:** uprawnienia do odczytu per umowa (spec 03 — do tego czasu każdy
